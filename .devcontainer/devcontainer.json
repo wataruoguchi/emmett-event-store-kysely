@@ -1,0 +1,57 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/javascript-node-postgres
+{
+  "name": "Node.js & PostgreSQL",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  // Features to add to the dev container. More info: https://containers.dev/features.
+  // "features": {},
+
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  // This can be used to network with other containers or with the host.
+  "forwardPorts": [3005],
+
+  // Use 'postCreateCommand' to run commands after the container is created.
+  "postCreateCommand": "echo 'source $PWD/.bashrc' >> ~/.bashrc && mkdir -p ~/.config/pgcli && cp $PWD/.devcontainer/pgcli-config ~/.config/pgcli/config",
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global core.editor 'vi'",
+
+  // Configure tool-specific properties.
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "biomejs.biome",
+        "ckolkman.vscode-postgres",
+        "DavidAnson.vscode-markdownlint",
+        "christian-kohler.path-intellisense",
+        "formulahendry.auto-close-tag",
+        "formulahendry.auto-rename-tag",
+        "GitHub.vscode-pull-request-github",
+        "github.vscode-github-actions",
+        "infeng.vscode-react-typescript",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode-remote.remote-containers",
+        "ms-vscode-remote.remote-ssh",
+        "ms-vscode-remote.remote-ssh-edit",
+        "ms-vscode-remote.remote-wsl",
+        "ms-vscode-remote.vscode-remote-extensionpack",
+        "ms-vscode.remote-explorer",
+        "ms-vscode.remote-server",
+        "ms-vscode.vscode-typescript-next",
+        "oderwat.indent-rainbow",
+        "pmneo.tsimporter",
+        "streetsidesoftware.code-spell-checker",
+        "vincaslt.highlight-matching-tag",
+        "vscode-icons-team.vscode-icons",
+        "vscodevim.vim",
+        "wayou.vscode-todo-highlight",
+        "wraith13.background-phi-colors",
+        "xabikos.JavaScriptSnippets",
+        "znck.grammarly"
+      ]
+    }
+  }
+  // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+  // "remoteUser": "root"
+}
