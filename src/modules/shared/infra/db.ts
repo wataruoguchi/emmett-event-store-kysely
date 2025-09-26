@@ -1,8 +1,9 @@
 import { Kysely, PostgresDialect } from "kysely";
-import type { DB } from "kysely-codegen";
+import type { DB as DBType } from "kysely-codegen";
 import { Pool } from "pg";
 
-const db = new Kysely<DB>({
+export type DB = Kysely<DBType>;
+const db = new Kysely<DBType>({
   dialect: new PostgresDialect({
     pool: new Pool({
       connectionString: process.env.DATABASE_URL,
