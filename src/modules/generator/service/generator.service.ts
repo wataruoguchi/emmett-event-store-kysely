@@ -1,3 +1,4 @@
+import type { TenantService } from "../../tenant/tenant.index.js";
 import { GeneratorEntitySchema } from "../domain/generator.entity.js";
 import {
   GeneratorInvalidInputError,
@@ -7,16 +8,15 @@ import {
 import type { GeneratorRepository } from "../repository/generator.repo.js";
 import type { GeneratorEventHandler } from "./event-handler.js";
 
+export type GeneratorService = ReturnType<typeof createGeneratorServiceFactory>;
+
 type Dependencies = {
   handler: GeneratorEventHandler;
   repository: GeneratorRepository;
-  findTenantByIdService: (tenantId: string) => Promise<{
-    tenantId: string;
-    name: string;
-  }>;
+  findTenantByIdService: TenantService["get"];
 };
 
-export function createGeneratorService(deps: Dependencies) {
+export function createGeneratorServiceFactory(deps: Dependencies) {
   return {
     create: createCreateGeneratorService(deps),
     update: createUpdateGeneratorService(deps),

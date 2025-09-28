@@ -13,6 +13,7 @@ export async function up(db: Kysely<any>): Promise<void> {
    */
   await db.schema
     .createTable("streams")
+    .ifNotExists()
     .addColumn("stream_id", "text", (col) => col.notNull())
     .addColumn("stream_position", "bigint", (col) => col.notNull())
     .addColumn("partition", "text", (col) => col.notNull())
@@ -38,6 +39,10 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE UNIQUE INDEX idx_streams_stream_id_partition_is_archived
   ON streams (stream_id, partition, is_archived)
   INCLUDE (stream_position);`.execute(db);
+  // DEFAULT partition for streams
+  await sql`CREATE TABLE IF NOT EXISTS streams_default PARTITION OF streams DEFAULT;`.execute(
+    db,
+  );
 
   /**
    * ================================================
@@ -79,6 +84,10 @@ export async function up(db: Kysely<any>): Promise<void> {
     ])
     .modifyEnd(sql` PARTITION BY LIST (partition);`)
     .execute();
+  // DEFAULT partition for messages
+  await sql`CREATE TABLE IF NOT EXISTS messages_default PARTITION OF messages DEFAULT;`.execute(
+    db,
+  );
 
   /**
    * ================================================
@@ -100,10 +109,17 @@ export async function up(db: Kysely<any>): Promise<void> {
     ])
     .modifyEnd(sql` PARTITION BY LIST (partition);`)
     .execute();
+  // DEFAULT partition for subscriptions
+  await sql`CREATE TABLE IF NOT EXISTS subscriptions_default PARTITION OF subscriptions DEFAULT;`.execute(
+    db,
+  );
 }
 
 // `any` is required here since migrations should be frozen in time. alternatively, keep a "snapshot" db interface.
 export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS streams_default;`.execute(db);
+  await sql`DROP TABLE IF EXISTS messages_default;`.execute(db);
+  await sql`DROP TABLE IF EXISTS subscriptions_default;`.execute(db);
   await sql`DROP TABLE IF EXISTS streams;`.execute(db);
   await sql`DROP TABLE IF EXISTS messages;`.execute(db);
   await sql`DROP TABLE IF EXISTS subscriptions;`.execute(db);

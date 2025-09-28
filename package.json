@@ -8,7 +8,8 @@
     "prepare": "husky",
     "test": "vitest run",
     "format": "biome format --write",
-    "codegen": "kysely-codegen"
+    "codegen": "kysely-codegen",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@event-driven-io/emmett": "^0.38.5",

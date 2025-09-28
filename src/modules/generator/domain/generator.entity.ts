@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const GeneratorEntitySchema = z.object({
   tenantId: z.string(),
-  generatorId: z.string(),
+  generatorId: z.uuid(),
   name: z.string(),
   address: z.string().optional(),
   generatorType: z
