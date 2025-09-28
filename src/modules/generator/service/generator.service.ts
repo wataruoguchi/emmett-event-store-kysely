@@ -16,12 +16,16 @@ type Dependencies = {
   findTenantByIdService: TenantService["get"];
 };
 
+type GetGenerator = ReturnType<typeof createGetGeneratorService>;
+
 export function createGeneratorServiceFactory(deps: Dependencies) {
+  const get: GetGenerator = createGetGeneratorService(deps);
+
   return {
     create: createCreateGeneratorService(deps),
-    update: createUpdateGeneratorService(deps),
-    delete: createDeleteGeneratorService(deps),
-    get: createGetGeneratorService(deps),
+    update: createUpdateGeneratorService({ get }, deps),
+    delete: createDeleteGeneratorService({ get }, deps),
+    get,
     getAll: createGetGeneratorsService(deps),
   };
 }
@@ -47,21 +51,23 @@ function createCreateGeneratorService({
   };
 }
 
-function createUpdateGeneratorService({
-  handler,
-  repository,
-  findTenantByIdService,
-}: Dependencies) {
+function createUpdateGeneratorService(
+  { get }: { get: GetGenerator },
+  {
+    handler,
+    findTenantByIdService,
+  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
+) {
   return async (input: unknown) => {
     const generator = GeneratorEntitySchema.parse(input);
     const tenant = await findTenantByIdService(generator.tenantId);
     if (!tenant) {
       throw new GeneratorTenantNotFoundError("Tenant not found");
     }
-    const existingGenerator = await repository.findById(
-      generator.tenantId,
-      generator.generatorId,
-    );
+    const existingGenerator = await get({
+      tenantId: generator.tenantId,
+      generatorId: generator.generatorId,
+    });
     if (!existingGenerator) {
       throw new GeneratorNotFoundError("Generator not found");
     }
@@ -69,11 +75,10 @@ function createUpdateGeneratorService({
   };
 }
 
-function createDeleteGeneratorService({
-  handler,
-  repository,
-  findTenantByIdService,
-}: Dependencies) {
+function createDeleteGeneratorService(
+  { get }: { get: GetGenerator },
+  { handler, findTenantByIdService }: Dependencies,
+) {
   return async ({
     tenantId,
     generatorId,
@@ -88,7 +93,10 @@ function createDeleteGeneratorService({
     if (!tenant) {
       throw new GeneratorTenantNotFoundError("Tenant not found");
     }
-    const existingGenerator = await repository.findById(tenantId, generatorId);
+    const existingGenerator = await get({
+      tenantId,
+      generatorId,
+    });
     if (!existingGenerator) {
       throw new GeneratorNotFoundError("Generator not found");
     }

@@ -23,12 +23,23 @@ const PostgreSQLEventStoreDefaultGlobalPosition = 0n;
 const PostgreSQLEventStoreDefaultStreamVersion = 0n;
 const DEFAULT_PARTITION = "default_partition";
 
-export type EventStore = ReturnType<typeof createEventStoreFactory>;
-export function createEventStore({ db }: { db: DB }) {
-  return createEventStoreFactory({
-    readStream: createReadStream({ db }),
-    appendToStream: createAppendToStream({ db }),
+export type EventStore = ReturnType<typeof createAggregateStream>;
+export function createEventStore({ db }: { db: DB }): {
+  aggregateStream: AggregateStream;
+  readStream: ReadStream;
+  appendToStream: AppendToStream;
+} {
+  const readStream: ReadStream = createReadStream({ db });
+  const appendToStream: AppendToStream = createAppendToStream({ db });
+  const { aggregateStream } = createAggregateStream({
+    readStream,
+    appendToStream,
   });
+  return {
+    aggregateStream,
+    readStream,
+    appendToStream,
+  };
 }
 
 type ReadStream = <EventType extends Event>(
@@ -36,7 +47,7 @@ type ReadStream = <EventType extends Event>(
   options?: ReadStreamOptions & { partition?: string },
 ) => Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>>;
 
-function createReadStream({ db }: { db: DB }) {
+function createReadStream({ db }: { db: DB }): ReadStream {
   return async function readStream<EventType extends Event>(
     streamName: string,
     options?: ReadStreamOptions & { partition?: string },
@@ -148,6 +159,7 @@ function createAppendToStream({ db }: { db: DB }): AppendToStream {
       };
     }
 
+    // TODO: Tech debt.
     // Resolve stream type from name: "type-xyz-..." => type, else fallback
     const [firstPart, ...rest] = streamName.split("-");
     const streamType = firstPart && rest.length > 0 ? firstPart : "emt:unknown";
@@ -199,19 +211,16 @@ function createAppendToStream({ db }: { db: DB }): AppendToStream {
           .execute();
       } else {
         if (typeof expected === "bigint") {
-          const upd = await trx
+          const updatedRow = await trx
             .updateTable("streams")
             .set({ stream_position: nextStreamPosition.toString() })
             .where("stream_id", "=", streamName)
             .where("partition", "=", partition)
             .where("is_archived", "=", false)
             .where("stream_position", "=", basePos.toString())
-            .execute();
-          const updated = Number(
-            (upd as unknown as { numUpdatedRows?: number | bigint })
-              .numUpdatedRows ?? 0,
-          );
-          if (updated === 0) {
+            .returning("stream_position")
+            .executeTakeFirst();
+          if (!updatedRow) {
             throw new ExpectedVersionConflictError(basePos, expected);
           }
         } else {
@@ -283,17 +292,29 @@ function createAppendToStream({ db }: { db: DB }): AppendToStream {
   };
 }
 
-function createEventStoreFactory({
+type AggregateStream = <State, EventType extends Event>(
+  streamName: string,
+  options: AggregateStreamOptions<State, EventType, PostgresReadEventMetadata>,
+) => Promise<AggregateStreamResult<State>>;
+
+function createAggregateStream({
   readStream,
   appendToStream,
 }: {
   readStream: ReadStream;
   appendToStream: AppendToStream;
-}) {
+}): {
+  aggregateStream: AggregateStream;
+  readStream: ReadStream;
+  appendToStream: AppendToStream;
+} {
   /**
    * This function is pretty much a copy of the emmett aggregateStream function found in `src/packages/emmett-postgresql/src/eventStore/postgreSQLEventStore.ts`
    */
-  async function aggregateStream<State, EventType extends Event>(
+  const aggregateStream: AggregateStream = async function aggregateStream<
+    State,
+    EventType extends Event,
+  >(
     streamName: string,
     options: AggregateStreamOptions<
       State,
@@ -322,20 +343,14 @@ function createEventStoreFactory({
       currentStreamVersion: result.currentStreamVersion,
       streamExists: result.streamExists,
     };
-  }
+  };
 
+  // Returning only aggregateStream causes a type error. We could address it later.
   return {
     aggregateStream,
     readStream,
     appendToStream,
   };
-}
-
-export function getEventStoreForDb(db: DB) {
-  return createEventStoreFactory({
-    readStream: createReadStream({ db }),
-    appendToStream: createAppendToStream({ db }),
-  });
 }
 
 /**

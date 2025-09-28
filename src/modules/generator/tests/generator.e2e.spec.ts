@@ -1,6 +1,7 @@
 import { faker } from "@faker-js/faker";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import z from "zod";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DB } from "../../shared/infra/db.js";
@@ -40,6 +41,39 @@ describe("Generator Integration", () => {
       body: JSON.stringify(generatorData),
     });
     expect(response.status).toBe(201);
+  });
+
+  describe("should update a generator", () => {
+    let generatorId: string;
+    beforeAll(async () => {
+      const generatorData = generateGeneratorData();
+      const response = await app.request(
+        `/api/tenants/${tenantId}/generators`,
+        {
+          method: "POST",
+          body: JSON.stringify(generatorData),
+        },
+      );
+      const json = await response.json();
+      generatorId = json.generatorId;
+    });
+
+    it("should update a generator", async () => {
+      expect(generatorId).toBeDefined();
+      expect(z.uuid().safeParse(generatorId).success).toBe(true);
+
+      const response = await app.request(
+        `/api/tenants/${tenantId}/generators/${generatorId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            isDeleted: false,
+            name: "Updated Generator",
+          }),
+        },
+      );
+      expect(response.status).toBe(201);
+    });
   });
 
   describe("should get a generator by id", () => {

@@ -4,7 +4,7 @@ import { sql, type Kysely } from "kysely";
 import type { DB as DBSchema } from "kysely-codegen";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
-import { getEventStoreForDb } from "./event-store.js";
+import { createEventStore } from "./event-store.js";
 
 type TestEvent = Event<
   "ItemAdded" | "DiscountApplied",
@@ -51,7 +51,7 @@ describe("event-store (kysely, pg)", () => {
   });
 
   it("appends and reads events on default partition", async () => {
-    const store = getEventStoreForDb(db);
+    const store = createEventStore({ db });
     const streamName = "cart-" + Math.random().toString(36).slice(2, 8);
     const events: TestEvent[] = [
       {
@@ -92,7 +92,7 @@ describe("event-store (kysely, pg)", () => {
   });
 
   it("enforces expected version", async () => {
-    const store = getEventStoreForDb(db);
+    const store = createEventStore({ db });
     const streamName = "order-" + Math.random().toString(36).slice(2, 8);
     const events: TestEvent[] = [
       { type: "ItemAdded", data: { sku: "B", qty: 2 } },
@@ -113,7 +113,7 @@ describe("event-store (kysely, pg)", () => {
   });
 
   it("isolates events by partition", async () => {
-    const store = getEventStoreForDb(db);
+    const store = createEventStore({ db });
     const streamName = "acc-" + Math.random().toString(36).slice(2, 8);
     const partitionA = "moduleA__tenantA";
     const partitionB = "moduleA__tenantB";
@@ -145,7 +145,7 @@ describe("event-store (kysely, pg)", () => {
   });
 
   it("supports from/to/maxCount options", async () => {
-    const store = getEventStoreForDb(db);
+    const store = createEventStore({ db });
     const streamName = "rs-" + Math.random().toString(36).slice(2, 8);
     const events: TestEvent[] = [
       { type: "ItemAdded", data: { n: 1 } },
@@ -182,7 +182,7 @@ describe("event-store (kysely, pg)", () => {
   });
 
   it("handles STREAM_EXISTS / STREAM_DOES_NOT_EXIST expected versions", async () => {
-    const store = getEventStoreForDb(db);
+    const store = createEventStore({ db });
     const streamName = "flags-" + Math.random().toString(36).slice(2, 8);
 
     await expect(
