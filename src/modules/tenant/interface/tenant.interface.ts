@@ -1,12 +1,16 @@
 import { Hono } from "hono";
-import type { DB } from "../../shared/infra/db.js";
+import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import { createTenantRepository } from "../repository/tenant.repo.js";
 import {
   createTenantServiceFactory,
   type TenantService,
 } from "../service/tenant.service.js";
 
-export function createTenantService({ db }: { db: DB }): TenantService {
+export function createTenantService({
+  db,
+}: {
+  db: DatabaseExecutor;
+}): TenantService {
   return createTenantServiceFactory({
     repository: createTenantRepository(db),
   });

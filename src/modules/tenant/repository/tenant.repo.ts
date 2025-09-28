@@ -1,8 +1,8 @@
-import type { DB } from "../../shared/infra/db.js";
+import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { TenantEntity } from "../domain/tenant.entity.js";
 
 export type TenantRepository = ReturnType<typeof createTenantRepository>;
-export function createTenantRepository(db: DB) {
+export function createTenantRepository(db: DatabaseExecutor) {
   return {
     async findById(id: string) {
       return db

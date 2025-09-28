@@ -6,8 +6,8 @@ import {
   type Command,
   type Event,
 } from "@event-driven-io/emmett";
-import type { EventStore } from "../../shared/event-sourcing/event-store.js";
-import type { GeneratorEntity } from "../domain/generator.entity.js";
+import type { EventStore } from "../../../shared/event-sourcing/event-store.js";
+import type { GeneratorEntity } from "../../domain/generator.entity.js";
 
 /**
  * Reference:

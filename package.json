@@ -9,7 +9,10 @@
     "test": "vitest run",
     "format": "biome format --write",
     "codegen": "kysely-codegen",
-    "type-check": "tsc --noEmit"
+    "migrate:up": "kysely-ctl migrate:up && npm run codegen",
+    "migrate:down": "kysely-ctl migrate:down && npm run codegen",
+    "type-check": "tsc --noEmit",
+    "proj:worker": "tsx src/workers/projection-worker.ts"
   },
   "dependencies": {
     "@event-driven-io/emmett": "^0.38.5",

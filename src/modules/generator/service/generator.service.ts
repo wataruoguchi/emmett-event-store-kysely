@@ -6,7 +6,7 @@ import {
   GeneratorTenantNotFoundError,
 } from "../errors.js";
 import type { GeneratorRepository } from "../repository/generator.repo.js";
-import type { GeneratorEventHandler } from "./event-handler.js";
+import type { GeneratorEventHandler } from "./event-sourcing/generator.event-handler.js";
 
 export type GeneratorService = ReturnType<typeof createGeneratorServiceFactory>;
 

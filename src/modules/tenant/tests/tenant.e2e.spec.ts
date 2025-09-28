@@ -2,13 +2,13 @@ import { faker } from "@faker-js/faker";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
-import type { DB } from "../../shared/infra/db.js";
+import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import { createTenantApp, createTenantService } from "../tenant.index.js";
 
 describe("Tenant Integration", () => {
   const TEST_DB_NAME = "tenant_e2e_test";
   let app: Hono;
-  let db: DB;
+  let db: DatabaseExecutor;
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);

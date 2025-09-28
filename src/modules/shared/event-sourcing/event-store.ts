@@ -16,7 +16,7 @@ import {
 } from "@event-driven-io/emmett";
 import type { DB as DBSchema } from "kysely-codegen";
 import { randomUUID } from "node:crypto";
-import type { DB } from "../infra/db.js";
+import type { DatabaseExecutor } from "../infra/db.js";
 
 type PostgresReadEventMetadata = ReadEventMetadataWithGlobalPosition;
 const PostgreSQLEventStoreDefaultGlobalPosition = 0n;
@@ -24,7 +24,7 @@ const PostgreSQLEventStoreDefaultStreamVersion = 0n;
 const DEFAULT_PARTITION = "default_partition";
 
 export type EventStore = ReturnType<typeof createAggregateStream>;
-export function createEventStore({ db }: { db: DB }): {
+export function createEventStore({ db }: { db: DatabaseExecutor }): {
   aggregateStream: AggregateStream;
   readStream: ReadStream;
   appendToStream: AppendToStream;
@@ -42,12 +42,12 @@ export function createEventStore({ db }: { db: DB }): {
   };
 }
 
-type ReadStream = <EventType extends Event>(
+export type ReadStream = <EventType extends Event>(
   stream: string,
   options?: ReadStreamOptions & { partition?: string },
 ) => Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>>;
 
-function createReadStream({ db }: { db: DB }): ReadStream {
+function createReadStream({ db }: { db: DatabaseExecutor }): ReadStream {
   return async function readStream<EventType extends Event>(
     streamName: string,
     options?: ReadStreamOptions & { partition?: string },
@@ -147,7 +147,11 @@ type AppendToStream = <EventType extends Event>(
   options?: AppendToStreamOptions & { partition?: string },
 ) => Promise<AppendToStreamResultWithGlobalPosition>;
 
-function createAppendToStream({ db }: { db: DB }): AppendToStream {
+function createAppendToStream({
+  db,
+}: {
+  db: DatabaseExecutor;
+}): AppendToStream {
   return async function appendToStream(streamName, events, options) {
     const partition = options?.partition ?? DEFAULT_PARTITION;
 

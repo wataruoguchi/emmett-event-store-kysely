@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { createEventStore } from "../../shared/event-sourcing/event-store.js";
-import type { DB } from "../../shared/infra/db.js";
+import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { TenantService } from "../../tenant/tenant.index.js";
 import { createGeneratorRepository } from "../repository/generator.repo.js";
-import { generatorEventHandler } from "../service/event-handler.js";
+import { generatorEventHandler } from "../service/event-sourcing/generator.event-handler.js";
 import {
   createGeneratorServiceFactory,
   type GeneratorService,
@@ -11,7 +11,7 @@ import {
 
 export function createGeneratorService(
   { tenantService }: { tenantService: TenantService },
-  { db }: { db: DB },
+  { db }: { db: DatabaseExecutor },
 ): GeneratorService {
   return createGeneratorServiceFactory({
     repository: createGeneratorRepository(db),

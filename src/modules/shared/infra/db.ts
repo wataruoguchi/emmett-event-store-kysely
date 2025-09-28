@@ -2,7 +2,7 @@ import { Kysely, PostgresDialect } from "kysely";
 import type { DB as DBType } from "kysely-codegen";
 import { Pool } from "pg";
 
-export type DB = Kysely<DBType>;
+export type DatabaseExecutor = Kysely<DBType>;
 const db = new Kysely<DBType>({
   dialect: new PostgresDialect({
     pool: new Pool({
