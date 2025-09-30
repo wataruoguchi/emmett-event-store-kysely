@@ -11,7 +11,7 @@ async function main() {
   const runner = createProjectionRunner({ db, readStream, registry });
 
   const subscriptionId = "generators-read-model";
-  const partition = "default_partition";
+  const partition = "default_partition"; // Partition for readStream
   const batchSize = 200;
   const pollIntervalMs = Number(process.env.PROJECTION_POLL_MS ?? 1000);
 

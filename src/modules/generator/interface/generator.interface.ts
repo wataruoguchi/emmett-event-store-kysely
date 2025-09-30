@@ -1,5 +1,9 @@
 import { Hono } from "hono";
 import { createEventStore } from "../../shared/event-sourcing/event-store.js";
+import {
+  createContextMiddleware,
+  getContext,
+} from "../../shared/hono/context-middleware.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { TenantService } from "../../tenant/tenant.index.js";
 import { createGeneratorRepository } from "../repository/generator.repo.js";
@@ -13,10 +17,15 @@ export function createGeneratorService(
   { tenantService }: { tenantService: TenantService },
   { db }: { db: DatabaseExecutor },
 ): GeneratorService {
+  const eventStore = createEventStore({ db });
+
   return createGeneratorServiceFactory({
     repository: createGeneratorRepository(db),
     findTenantByIdService: tenantService.get,
-    handler: generatorEventHandler({ eventStore: createEventStore({ db }) }),
+    handler: generatorEventHandler({
+      eventStore,
+      getContext,
+    }),
   });
 }
 
@@ -26,6 +35,7 @@ function createGeneratorApp({
   generatorService: GeneratorService;
 }) {
   const app = new Hono();
+  app.use(createContextMiddleware());
   app.get("/api/tenants/:tenantId/generators", async (c) => {
     const tenantId = c.req.param("tenantId");
 

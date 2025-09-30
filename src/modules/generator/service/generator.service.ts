@@ -100,7 +100,7 @@ function createDeleteGeneratorService(
     if (!existingGenerator) {
       throw new GeneratorNotFoundError("Generator not found");
     }
-    return await handler.delete(generatorId);
+    return await handler.delete(generatorId, { tenantId, generatorId }); // TODO: Review the interface
   };
 }
 

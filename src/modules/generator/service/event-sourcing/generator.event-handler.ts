@@ -7,6 +7,7 @@ import {
   type Event,
 } from "@event-driven-io/emmett";
 import type { EventStore } from "../../../shared/event-sourcing/event-store.js";
+import type { AppContext } from "../../../shared/hono/context-middleware.js";
 import type { GeneratorEntity } from "../../domain/generator.entity.js";
 
 /**
@@ -32,11 +33,13 @@ import type { GeneratorEntity } from "../../domain/generator.entity.js";
  */
 export function generatorEventHandler({
   eventStore,
+  getContext,
 }: {
   eventStore: EventStore;
+  getContext: () => AppContext;
 }) {
   const handler = DeciderCommandHandler({
-    decide: createDecide(),
+    decide: createDecide(getContext),
     evolve: createEvolve(),
     initialState,
   });
@@ -51,16 +54,23 @@ export function generatorEventHandler({
         type: "UpdateGenerator",
         data,
       }),
-    delete: (generatorId: string) =>
+    delete: (
+      generatorId: string,
+      data: { tenantId: string; generatorId: string },
+    ) =>
       handler(eventStore, generatorId, {
         type: "DeleteGenerator",
-        data: { generatorId },
+        data,
       }),
   };
 }
 export type GeneratorEventHandler = ReturnType<typeof generatorEventHandler>;
 
-function createDecide() {
+function createDecide(getContext: () => AppContext) {
+  function buildMessageMetadataFromContext() {
+    const { userId } = getContext();
+    return { createdBy: userId };
+  }
   function assertNotDeleted(
     state: DomainState,
   ): asserts state is CreatedGenerator | UpdatedGenerator {
@@ -88,6 +98,7 @@ function createDecide() {
       return {
         type: "GeneratorCreated",
         data,
+        metadata: buildMessageMetadataFromContext(),
       };
     },
     updateGenerator: (
@@ -104,6 +115,7 @@ function createDecide() {
       return {
         type: "GeneratorUpdated",
         data,
+        metadata: buildMessageMetadataFromContext(),
       };
     },
     deleteGenerator: (command: DeleteGenerator): GeneratorDeleted => {
@@ -114,6 +126,7 @@ function createDecide() {
       return {
         type: "GeneratorDeleted",
         data: { generatorId },
+        metadata: buildMessageMetadataFromContext(),
       };
     },
   };
@@ -244,9 +257,24 @@ type DomainState =
  * - Generator deleted with the given id.
  * ================================================
  */
-type GeneratorCreated = Event<"GeneratorCreated", GeneratorEntity>;
-type GeneratorUpdated = Event<"GeneratorUpdated", GeneratorEntity>;
-type GeneratorDeleted = Event<"GeneratorDeleted", GeneratorIdOnly>;
+type EventMetadata = {
+  createdBy: string;
+};
+type GeneratorCreated = Event<
+  "GeneratorCreated",
+  GeneratorEntity,
+  EventMetadata
+>;
+type GeneratorUpdated = Event<
+  "GeneratorUpdated",
+  GeneratorEntity,
+  EventMetadata
+>;
+type GeneratorDeleted = Event<
+  "GeneratorDeleted",
+  GeneratorIdOnly,
+  EventMetadata
+>;
 type DomainEvent = GeneratorCreated | GeneratorUpdated | GeneratorDeleted;
 
 /**
@@ -262,5 +290,8 @@ type DomainEvent = GeneratorCreated | GeneratorUpdated | GeneratorDeleted;
  */
 type CreateGenerator = Command<"CreateGenerator", GeneratorEntity>;
 type UpdateGenerator = Command<"UpdateGenerator", GeneratorEntity>;
-type DeleteGenerator = Command<"DeleteGenerator", GeneratorIdOnly>;
+type DeleteGenerator = Command<
+  "DeleteGenerator",
+  GeneratorIdOnly & { tenantId: string }
+>;
 type DomainCommand = CreateGenerator | UpdateGenerator | DeleteGenerator;
