@@ -5,6 +5,7 @@ import {
   getContext,
 } from "../../shared/hono/context-middleware.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
+import type { Logger } from "../../shared/infra/logger.js";
 import type { TenantService } from "../../tenant/tenant.index.js";
 import { createGeneratorRepository } from "../repository/generator.repo.js";
 import { generatorEventHandler } from "../service/event-sourcing/generator.event-handler.js";
@@ -15,12 +16,12 @@ import {
 
 export function createGeneratorService(
   { tenantService }: { tenantService: TenantService },
-  { db }: { db: DatabaseExecutor },
+  { db, logger }: { db: DatabaseExecutor; logger: Logger },
 ): GeneratorService {
-  const eventStore = createEventStore({ db });
+  const eventStore = createEventStore({ db, logger });
 
   return createGeneratorServiceFactory({
-    repository: createGeneratorRepository(db),
+    repository: createGeneratorRepository({ db, logger }),
     findTenantByIdService: tenantService.get,
     handler: generatorEventHandler({
       eventStore,
@@ -31,8 +32,10 @@ export function createGeneratorService(
 
 function createGeneratorApp({
   generatorService,
+  logger,
 }: {
   generatorService: GeneratorService;
+  logger: Logger;
 }) {
   const app = new Hono();
   app.use(createContextMiddleware());
@@ -40,10 +43,11 @@ function createGeneratorApp({
     const tenantId = c.req.param("tenantId");
 
     try {
+      logger.info({ tenantId }, "getAllGenerators");
       const result = await generatorService.getAll({ tenantId });
       return c.json(result);
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "getAllGenerators");
       return c.json(
         {
           message: "Ugh!",
@@ -56,11 +60,12 @@ function createGeneratorApp({
   app.get("/api/tenants/:tenantId/generators/:id", async (c) => {
     const tenantId = c.req.param("tenantId");
     const id = c.req.param("id");
+    logger.info({ tenantId, id }, "getGeneratorById");
     try {
       const result = await generatorService.get({ tenantId, generatorId: id });
       return c.json(result);
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "getGeneratorById");
       return c.json(
         {
           message: "Ugh!",
@@ -73,10 +78,11 @@ function createGeneratorApp({
   app.post("/api/tenants/:tenantId/generators", async (c) => {
     const tenantId = c.req.param("tenantId");
     const data = await c.req.json();
+    logger.info({ tenantId, data }, "createGenerator");
 
     try {
       const result = await generatorService.create({ ...data, tenantId });
-      logResult(result);
+      logger.info({ result: createLogBody(result) }, "createGenerator");
       return c.json(
         {
           message: "Created!",
@@ -87,7 +93,7 @@ function createGeneratorApp({
         201,
       );
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "createGenerator");
       return c.json(
         {
           message: "Ugh!",
@@ -104,12 +110,13 @@ function createGeneratorApp({
       isDeleted: boolean;
       data: unknown;
     };
+    logger.info({ tenantId, id, data }, "updateGenerator");
 
     try {
       const result = isDeleted
         ? await generatorService.delete({ tenantId, generatorId: id })
         : await generatorService.update({ ...data, tenantId, generatorId: id });
-      logResult(result);
+      logger.info({ result: createLogBody(result) }, "updateGenerator");
       return c.json(
         {
           message: isDeleted ? "Deleted!" : "Updated!",
@@ -117,7 +124,7 @@ function createGeneratorApp({
         201,
       );
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "updateGenerator");
       return c.json(
         {
           message: "Ugh!",
@@ -131,13 +138,13 @@ function createGeneratorApp({
 
 export { createGeneratorApp };
 
-function logResult(result: unknown) {
+function createLogBody(result: unknown) {
   if (typeof result !== "object" || result === null) return;
   if (!("newEvents" in result) || !("newState" in result)) return;
   const { newEvents, newState, ...rest } = result;
-  console.log({
+  return {
     newEvents: JSON.stringify(newEvents),
     newState: JSON.stringify(newState),
     ...rest,
-  });
+  };
 }

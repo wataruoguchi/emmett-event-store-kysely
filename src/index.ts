@@ -5,6 +5,7 @@ import {
   createGeneratorService,
 } from "./modules/generator/generator.index.js";
 import { getDb } from "./modules/shared/infra/db.js";
+import { logger } from "./modules/shared/infra/logger.js";
 import {
   createTenantApp,
   createTenantService,
@@ -17,12 +18,13 @@ app.get("/", (c) => {
   return c.text("Hello Hono!");
 });
 
-const tenantService = createTenantService({ db });
-app.route("", createTenantApp({ tenantService }));
+const tenantService = createTenantService({ db, logger });
+app.route("", createTenantApp({ tenantService, logger }));
 app.route(
   "",
   createGeneratorApp({
-    generatorService: createGeneratorService({ tenantService }, { db }),
+    generatorService: createGeneratorService({ tenantService }, { db, logger }),
+    logger,
   }),
 );
 
@@ -32,6 +34,6 @@ serve(
     port: Number(process.env.PORT),
   },
   (info) => {
-    console.log(`Server is running on http://localhost:${info.port}`);
+    logger.info(`Server is running on http://localhost:${info.port}`);
   },
 );

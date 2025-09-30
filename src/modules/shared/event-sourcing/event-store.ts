@@ -17,6 +17,7 @@ import {
 import type { DB as DBSchema } from "kysely-codegen";
 import { randomUUID } from "node:crypto";
 import type { DatabaseExecutor } from "../infra/db.js";
+import type { Logger } from "../infra/logger.js";
 
 type PostgresReadEventMetadata = ReadEventMetadataWithGlobalPosition;
 const PostgreSQLEventStoreDefaultGlobalPosition = 0n;
@@ -24,17 +25,26 @@ const PostgreSQLEventStoreDefaultStreamVersion = 0n;
 const DEFAULT_PARTITION = "default_partition";
 
 export type EventStore = ReturnType<typeof createAggregateStream>;
-export function createEventStore({ db }: { db: DatabaseExecutor }): {
+export function createEventStore({
+  db,
+  logger,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+}): {
   aggregateStream: AggregateStream;
   readStream: ReadStream;
   appendToStream: AppendToStream;
 } {
-  const readStream: ReadStream = createReadStream({ db });
-  const appendToStream: AppendToStream = createAppendToStream({ db });
-  const { aggregateStream } = createAggregateStream({
-    readStream,
-    appendToStream,
-  });
+  const readStream: ReadStream = createReadStream({ db, logger });
+  const appendToStream: AppendToStream = createAppendToStream({ db, logger });
+  const { aggregateStream } = createAggregateStream(
+    {
+      readStream,
+      appendToStream,
+    },
+    { logger },
+  );
   return {
     aggregateStream,
     readStream,
@@ -47,11 +57,18 @@ export type ReadStream = <EventType extends Event>(
   options?: ReadStreamOptions & { partition?: string },
 ) => Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>>;
 
-function createReadStream({ db }: { db: DatabaseExecutor }): ReadStream {
+function createReadStream({
+  db,
+  logger,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+}): ReadStream {
   return async function readStream<EventType extends Event>(
     streamName: string,
     options?: ReadStreamOptions & { partition?: string },
   ) {
+    logger.info({ streamName, options }, "readStream");
     const partition = options?.partition ?? DEFAULT_PARTITION;
 
     // Determine current stream version and existence from streams table
@@ -149,10 +166,13 @@ type AppendToStream = <EventType extends Event>(
 
 function createAppendToStream({
   db,
+  logger,
 }: {
   db: DatabaseExecutor;
+  logger: Logger;
 }): AppendToStream {
   return async function appendToStream(streamName, events, options) {
+    logger.info({ streamName, events, options }, "appendToStream");
     const partition = options?.partition ?? DEFAULT_PARTITION;
 
     if (events.length === 0) {
@@ -301,13 +321,16 @@ type AggregateStream = <State, EventType extends Event>(
   options: AggregateStreamOptions<State, EventType, PostgresReadEventMetadata>,
 ) => Promise<AggregateStreamResult<State>>;
 
-function createAggregateStream({
-  readStream,
-  appendToStream,
-}: {
-  readStream: ReadStream;
-  appendToStream: AppendToStream;
-}): {
+function createAggregateStream(
+  {
+    readStream,
+    appendToStream,
+  }: {
+    readStream: ReadStream;
+    appendToStream: AppendToStream;
+  },
+  { logger }: { logger: Logger },
+): {
   aggregateStream: AggregateStream;
   readStream: ReadStream;
   appendToStream: AppendToStream;
@@ -326,6 +349,7 @@ function createAggregateStream({
       PostgresReadEventMetadata
     >,
   ): Promise<AggregateStreamResult<State>> {
+    logger.info({ streamName, options }, "aggregateStream");
     const { evolve, initialState, read } = options;
 
     const expectedStreamVersion = read?.expectedStreamVersion;

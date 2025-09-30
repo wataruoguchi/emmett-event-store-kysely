@@ -3,10 +3,11 @@ import { createEventStore } from "../modules/shared/event-sourcing/event-store.j
 import { createProjectionRunner } from "../modules/shared/event-sourcing/projections/runner.js";
 import { createProjectionRegistry } from "../modules/shared/event-sourcing/projections/types.js";
 import { getDb } from "../modules/shared/infra/db.js";
+import { logger } from "../modules/shared/infra/logger.js";
 
 async function main() {
   const db = getDb();
-  const { readStream } = createEventStore({ db });
+  const { readStream } = createEventStore({ db, logger });
   const registry = createProjectionRegistry(generatorsProjection());
   const runner = createProjectionRunner({ db, readStream, registry });
 
@@ -37,6 +38,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("projection-worker error", err);
+  logger.error({ err }, "projection-worker error");
   process.exit(1);
 });

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
+import type { Logger } from "../../shared/infra/logger.js";
 import { createTenantRepository } from "../repository/tenant.repo.js";
 import {
   createTenantServiceFactory,
@@ -8,22 +9,30 @@ import {
 
 export function createTenantService({
   db,
+  logger,
 }: {
   db: DatabaseExecutor;
+  logger: Logger;
 }): TenantService {
   return createTenantServiceFactory({
-    repository: createTenantRepository(db),
+    repository: createTenantRepository({ db, logger }),
   });
 }
 
-function createTenantApp({ tenantService }: { tenantService: TenantService }) {
+function createTenantApp({
+  tenantService,
+  logger,
+}: {
+  tenantService: TenantService;
+  logger: Logger;
+}) {
   const app = new Hono();
   app.get("/api/tenants", async (c) => {
     const result = await tenantService.getAll();
     try {
       return c.json(result);
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "getAllTenants");
       return c.json(
         {
           message: "Ugh!",
@@ -39,7 +48,7 @@ function createTenantApp({ tenantService }: { tenantService: TenantService }) {
       const result = await tenantService.get(id);
       return c.json(result);
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "getTenantById");
       return c.json(
         {
           message: "Ugh!",
@@ -55,7 +64,7 @@ function createTenantApp({ tenantService }: { tenantService: TenantService }) {
       const result = await tenantService.create(data);
       return c.json(result, 201);
     } catch (error) {
-      console.log({ error });
+      logger.error({ error }, "createTenant");
       return c.json(
         {
           message: "Ugh!",

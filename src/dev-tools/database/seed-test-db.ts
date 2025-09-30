@@ -1,9 +1,11 @@
 import { faker } from "@faker-js/faker";
 import { sql } from "kysely";
 import type { DatabaseExecutor } from "../../modules/shared/infra/db.js";
+import { logger } from "../../modules/shared/infra/logger.js";
 import { createTenantService } from "../../modules/tenant/tenant.index.js";
+
 export function seedTestDb(db: DatabaseExecutor) {
-  const tenantService = createTenantService({ db });
+  const tenantService = createTenantService({ db, logger });
 
   return {
     async createTenant(_name?: string) {

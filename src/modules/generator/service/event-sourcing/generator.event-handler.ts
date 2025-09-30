@@ -110,6 +110,7 @@ function createDecide(getContext: () => AppContext) {
       const { name: newName } = data;
       // ... There will be more business rules here.
       if (newName) {
+        // TODO: Do we need to detect what properties are changed here?
         console.log(`Changing name from ${currentName} to ${newName}`);
       }
       return {

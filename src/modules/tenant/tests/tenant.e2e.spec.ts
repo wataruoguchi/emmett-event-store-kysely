@@ -3,16 +3,23 @@ import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
+import type { Logger } from "../../shared/infra/logger.js";
 import { createTenantApp, createTenantService } from "../tenant.index.js";
 
 describe("Tenant Integration", () => {
   const TEST_DB_NAME = "tenant_e2e_test";
   let app: Hono;
   let db: DatabaseExecutor;
+  const logger = {
+    info: vi.fn(),
+  } as unknown as Logger;
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createTenantApp({ tenantService: createTenantService({ db }) });
+    app = createTenantApp({
+      tenantService: createTenantService({ db, logger }),
+      logger,
+    });
   });
 
   afterAll(async () => {

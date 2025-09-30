@@ -8,6 +8,7 @@ import { createEventStore } from "../../shared/event-sourcing/event-store.js";
 import { createProjectionRunner } from "../../shared/event-sourcing/projections/runner.js";
 import { createProjectionRegistry } from "../../shared/event-sourcing/projections/types.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
+import type { Logger } from "../../shared/infra/logger.js";
 import { createTenantService } from "../../tenant/tenant.index.js";
 import {
   createGeneratorApp,
@@ -18,6 +19,10 @@ import type { GeneratorService } from "../service/generator.service.js";
 
 describe("Generator Integration", () => {
   const TEST_DB_NAME = "generator_e2e_test";
+  const logger = {
+    info: vi.fn(),
+  } as unknown as Logger;
+
   let app: Hono;
   let db: DatabaseExecutor;
   let tenantId: string;
@@ -27,14 +32,15 @@ describe("Generator Integration", () => {
     db = await createTestDb(TEST_DB_NAME);
     app = createGeneratorApp({
       generatorService: createGeneratorService(
-        { tenantService: createTenantService({ db }) },
-        { db },
+        { tenantService: createTenantService({ db, logger }) },
+        { db, logger },
       ),
+      logger,
     });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     // Projection runner (in-test integration of the worker)
-    const { readStream } = createEventStore({ db });
+    const { readStream } = createEventStore({ db, logger });
     const registry = createProjectionRegistry(generatorsProjection());
     const runner = createProjectionRunner({ db, readStream, registry });
     project = async ({ batchSize = 500 } = {}) => {
@@ -161,7 +167,6 @@ describe("Generator Integration", () => {
         ReturnType<GeneratorService["getAll"]>
       >;
       expect(Array.isArray(list)).toBe(true);
-      console.log({ list });
       expect(list.some((g) => g && g.generator_id === generatorId)).toBe(true);
     });
   });
