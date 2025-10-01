@@ -12,8 +12,8 @@ export async function createTestDb(databaseName: string) {
     }),
   });
 
-  sql`DROP DATABASE IF EXISTS ${sql.raw(databaseName)}`.execute(db);
-  sql`CREATE DATABASE ${sql.raw(databaseName)}`.execute(db);
+  await sql`DROP DATABASE IF EXISTS ${sql.raw(databaseName)}`.execute(db);
+  await sql`CREATE DATABASE ${sql.raw(databaseName)}`.execute(db);
 
   const connectionString = process.env.DATABASE_URL?.replace(
     /\/[a-zA-Z0-9_]+$/,
