@@ -83,6 +83,7 @@ function createGeneratorApp({
     try {
       const result = await generatorService.create({ ...data, tenantId });
       logger.info({ result: createLogBody(result) }, "createGenerator");
+      // TODO: Schedule projection for this stream without blocking the response. e.g., using worker
       return c.json(
         {
           message: "Created!",
@@ -117,6 +118,7 @@ function createGeneratorApp({
         ? await generatorService.delete({ tenantId, generatorId: id })
         : await generatorService.update({ ...data, tenantId, generatorId: id });
       logger.info({ result: createLogBody(result) }, "updateGenerator");
+      // TODO: Schedule projection for this stream without blocking the response
       return c.json(
         {
           message: isDeleted ? "Deleted!" : "Updated!",
