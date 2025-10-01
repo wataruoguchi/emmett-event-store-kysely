@@ -52,9 +52,16 @@ export function createEventStore({
   };
 }
 
+type ExtendedOptions = {
+  partition?: string;
+  streamType?: string;
+};
+type MyAppendToStreamOptions = AppendToStreamOptions & ExtendedOptions;
+type MyReadStreamOptions = ReadStreamOptions & ExtendedOptions;
+
 export type ReadStream = <EventType extends Event>(
   stream: string,
-  options?: ReadStreamOptions & { partition?: string },
+  options?: MyReadStreamOptions,
 ) => Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>>;
 
 function createReadStream({
@@ -66,10 +73,10 @@ function createReadStream({
 }): ReadStream {
   return async function readStream<EventType extends Event>(
     streamName: string,
-    options?: ReadStreamOptions & { partition?: string },
+    options?: MyReadStreamOptions,
   ) {
-    logger.info({ streamName, options }, "readStream");
     const partition = options?.partition ?? DEFAULT_PARTITION;
+    logger.info({ streamName, options, partition }, "readStream");
 
     // Determine current stream version and existence from streams table
     const streamRow = await db
@@ -159,9 +166,9 @@ function createReadStream({
 }
 
 type AppendToStream = <EventType extends Event>(
-  stream: string,
+  streamName: string,
   events: EventType[],
-  options?: AppendToStreamOptions & { partition?: string },
+  options?: MyAppendToStreamOptions,
 ) => Promise<AppendToStreamResultWithGlobalPosition>;
 
 function createAppendToStream({
@@ -171,9 +178,19 @@ function createAppendToStream({
   db: DatabaseExecutor;
   logger: Logger;
 }): AppendToStream {
-  return async function appendToStream(streamName, events, options) {
-    logger.info({ streamName, events, options }, "appendToStream");
+  return async function appendToStream<EventType extends Event>(
+    streamId: string,
+    events: EventType[],
+    options?: MyAppendToStreamOptions,
+  ) {
     const partition = options?.partition ?? DEFAULT_PARTITION;
+    const streamType = options?.streamType ?? "unknown";
+    const expected = options?.expectedStreamVersion;
+
+    logger.info(
+      { streamName: streamId, events, options, partition },
+      "appendToStream",
+    );
 
     if (events.length === 0) {
       return {
@@ -183,19 +200,12 @@ function createAppendToStream({
       };
     }
 
-    // TODO: Tech debt.
-    // Resolve stream type from name: "type-xyz-..." => type, else fallback
-    const [firstPart, ...rest] = streamName.split("-");
-    const streamType = firstPart && rest.length > 0 ? firstPart : "emt:unknown";
-
-    const expected = options?.expectedStreamVersion;
-
     const result = await db.transaction().execute(async (trx) => {
       // Fetch current stream info
       const current = await trx
         .selectFrom("streams")
         .select(["stream_position"])
-        .where("stream_id", "=", streamName)
+        .where("stream_id", "=", streamId)
         .where("partition", "=", partition)
         .where("is_archived", "=", false)
         .executeTakeFirst();
@@ -225,7 +235,7 @@ function createAppendToStream({
         await trx
           .insertInto("streams")
           .values({
-            stream_id: streamName,
+            stream_id: streamId,
             stream_position: nextStreamPosition.toString(),
             partition,
             stream_type: streamType,
@@ -238,7 +248,7 @@ function createAppendToStream({
           const updatedRow = await trx
             .updateTable("streams")
             .set({ stream_position: nextStreamPosition.toString() })
-            .where("stream_id", "=", streamName)
+            .where("stream_id", "=", streamId)
             .where("partition", "=", partition)
             .where("is_archived", "=", false)
             .where("stream_position", "=", basePos.toString())
@@ -251,7 +261,7 @@ function createAppendToStream({
           await trx
             .updateTable("streams")
             .set({ stream_position: nextStreamPosition.toString() })
-            .where("stream_id", "=", streamName)
+            .where("stream_id", "=", streamId)
             .where("partition", "=", partition)
             .where("is_archived", "=", false)
             .execute();
@@ -269,7 +279,7 @@ function createAppendToStream({
             : {}),
         } as Record<string, unknown>;
         return {
-          stream_id: streamName,
+          stream_id: streamId,
           stream_position: streamPosition.toString(),
           partition,
           message_data: (e as unknown as { data: unknown })
@@ -349,8 +359,8 @@ function createAggregateStream(
       PostgresReadEventMetadata
     >,
   ): Promise<AggregateStreamResult<State>> {
-    logger.info({ streamName, options }, "aggregateStream");
     const { evolve, initialState, read } = options;
+    logger.info({ streamName, options }, "aggregateStream");
 
     const expectedStreamVersion = read?.expectedStreamVersion;
 
@@ -379,14 +389,4 @@ function createAggregateStream(
     readStream,
     appendToStream,
   };
-}
-
-/**
- * TODO: I don't know how we want to consume the return value of this function.
- */
-export function createdNewStream<EventType extends Event>(
-  nextStreamPosition: bigint,
-  events: EventType[],
-) {
-  return nextStreamPosition >= BigInt(events.length);
 }

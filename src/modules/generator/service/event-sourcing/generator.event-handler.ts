@@ -45,23 +45,41 @@ export function generatorEventHandler({
   });
   return {
     create: (generatorId: string, data: GeneratorEntity) =>
-      handler(eventStore, generatorId, {
-        type: "CreateGenerator",
-        data,
-      }),
+      handler(
+        eventStore,
+        generatorId,
+        // The following object is a domain command.
+        {
+          type: "CreateGenerator",
+          data,
+        },
+        { partition: data.tenantId, streamType: "generator" },
+      ),
     update: (generatorId: string, data: GeneratorEntity) =>
-      handler(eventStore, generatorId, {
-        type: "UpdateGenerator",
-        data,
-      }),
+      handler(
+        eventStore,
+        generatorId,
+        // The following object is a domain command.
+        {
+          type: "UpdateGenerator",
+          data,
+        },
+        { partition: data.tenantId, streamType: "generator" },
+      ),
     delete: (
       generatorId: string,
       data: { tenantId: string; generatorId: string },
     ) =>
-      handler(eventStore, generatorId, {
-        type: "DeleteGenerator",
-        data,
-      }),
+      handler(
+        eventStore,
+        generatorId,
+        // The following object is a domain command.
+        {
+          type: "DeleteGenerator",
+          data,
+        },
+        { partition: data.tenantId, streamType: "generator" },
+      ),
   };
 }
 export type GeneratorEventHandler = ReturnType<typeof generatorEventHandler>;
@@ -132,7 +150,10 @@ function createDecide(getContext: () => AppContext) {
     },
   };
 
-  // Group all commands into a unified function that is easily extensible when you add more commands:
+  /**
+   * Group all commands into a unified function that is easily extensible when you add more commands:
+   * It returns a domain event.
+   */
   return function decide(
     command: DomainCommand,
     state: DomainState,

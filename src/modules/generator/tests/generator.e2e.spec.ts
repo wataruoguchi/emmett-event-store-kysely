@@ -21,6 +21,7 @@ describe("Generator Integration", () => {
   const TEST_DB_NAME = "generator_e2e_test";
   const logger = {
     info: vi.fn(),
+    error: vi.fn(),
   } as unknown as Logger;
 
   let app: Hono;
@@ -48,12 +49,14 @@ describe("Generator Integration", () => {
         .selectFrom("streams")
         .select(["stream_id"])
         .where("is_archived", "=", false)
+        .where("partition", "=", tenantId)
+        .where("stream_type", "=", "generator")
         .execute();
       for (const s of streams) {
         const streamId = s.stream_id as string;
         const subscriptionId = `generators-read-model:${streamId}`;
         await runner.projectEvents(subscriptionId, streamId, {
-          partition: "default_partition",
+          partition: tenantId,
           batchSize,
         });
       }

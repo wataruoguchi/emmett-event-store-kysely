@@ -31,6 +31,10 @@ export function createProjectionRegistry(
   ...registries: ProjectionRegistry[]
 ): ProjectionRegistry {
   const combined: ProjectionRegistry = {};
+  /**
+   * This is necessary because the projection runner can be used to project events from multiple partitions.
+   * e.g., the generators-read-model projection runner can be used to project events for partition A, partition B, and partition C.
+   */
   for (const reg of registries) {
     for (const [eventType, handlers] of Object.entries(reg)) {
       combined[eventType] = [...(combined[eventType] ?? []), ...handlers];

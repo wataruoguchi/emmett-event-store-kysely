@@ -54,6 +54,10 @@ export function generatorsProjection(): ProjectionRegistry {
               partition,
             })
             .onConflict((oc) =>
+              /**
+               * You may want to learn about upserts in PostgreSQL. "excluded" is a special keyword in PostgreSQL.
+               * https://neon.com/postgresql/postgresql-tutorial/postgresql-upsert#introduction-to-the-postgresql-upsert-statement
+               */
               oc
                 .columns(["tenant_id", "generator_id", "partition"])
                 .doUpdateSet({
