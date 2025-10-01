@@ -68,6 +68,9 @@ export function createProjectionRunner({
         version: 1,
         last_processed_position: "0",
       })
+      .onConflict((oc) =>
+        oc.columns(["subscription_id", "partition", "version"]).doNothing(),
+      )
       .execute();
 
     return {
