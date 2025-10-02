@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createEventStore } from "../../shared/event-sourcing/event-store.js";
+import { createEventStore } from "../../shared/event-sourcing/event-store/event-store.js";
 import {
   createContextMiddleware,
   getContext,

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import z from "zod";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
-import { createEventStore } from "../../shared/event-sourcing/event-store.js";
+import { createReadStream } from "../../shared/event-sourcing/event-store/read-stream.js";
 import { createProjectionRunner } from "../../shared/event-sourcing/projections/runner.js";
 import { createProjectionRegistry } from "../../shared/event-sourcing/projections/types.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
@@ -41,7 +41,7 @@ describe("Generator Integration", () => {
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     // Projection runner (in-test integration of the worker)
-    const { readStream } = createEventStore({ db, logger });
+    const readStream = createReadStream({ db, logger });
     const registry = createProjectionRegistry(generatorsProjection());
     const runner = createProjectionRunner({ db, readStream, registry });
     project = async ({ batchSize = 500 } = {}) => {

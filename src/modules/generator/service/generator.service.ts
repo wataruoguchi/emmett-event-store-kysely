@@ -94,6 +94,13 @@ function createDeleteGeneratorService(
     if (!tenant) {
       throw new GeneratorTenantNotFoundError("Tenant not found");
     }
+    const existingGenerator = await get({
+      tenantId: tenantId,
+      generatorId: generatorId,
+    });
+    if (!existingGenerator) {
+      throw new GeneratorNotFoundError("Generator not found");
+    }
     return await handler.delete(generatorId, { tenantId, generatorId }); // TODO: Review the interface
   };
 }
