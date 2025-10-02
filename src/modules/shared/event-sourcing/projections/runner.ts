@@ -18,6 +18,10 @@ export type ProjectionRunnerDeps = {
   registry: ProjectionRegistry;
 };
 
+/**
+ * This is the main function that projects the events to the database.
+ * It is used to project the events to the database for a given subscription and partition.
+ */
 export function createProjectionRunner({
   db,
   readStream,

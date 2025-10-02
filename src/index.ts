@@ -19,7 +19,14 @@ app.get("/", (c) => {
 });
 
 const tenantService = createTenantService({ db, logger });
+/**
+ * Tenant module starts here
+ */
 app.route("", createTenantApp({ tenantService, logger }));
+
+/**
+ * Generator module starts here
+ */
 app.route(
   "",
   createGeneratorApp({

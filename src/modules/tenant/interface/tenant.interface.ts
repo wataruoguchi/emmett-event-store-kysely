@@ -7,6 +7,9 @@ import {
   type TenantService,
 } from "../service/tenant.service.js";
 
+/**
+ * Like index.ts, this file is the entry point for the tenant module.
+ */
 export function createTenantService({
   db,
   logger,
@@ -19,6 +22,9 @@ export function createTenantService({
   });
 }
 
+/**
+ * Create a tenant app. This function has all the HTTP logic for the tenant app.
+ */
 function createTenantApp({
   tenantService,
   logger,

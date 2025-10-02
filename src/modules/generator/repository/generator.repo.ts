@@ -2,6 +2,9 @@ import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
 
 export type GeneratorRepository = ReturnType<typeof createGeneratorRepository>;
+/**
+ * Create a generator repository. This file has all the database logic for the generator repository.
+ */
 export function createGeneratorRepository({
   db,
   logger,
@@ -12,8 +15,10 @@ export function createGeneratorRepository({
   return {
     async findById(tenantId: string, generatorId: string) {
       logger.info({ tenantId, generatorId }, "findById");
-
-      // TODO: We need to materialize our data into read models.
+      /**
+       * "generators" table is a Read Model for the generator aggregate.
+       * Read model is a table that is populated by the event stream. It doesn't get updated in real-time.
+       */
       return await db
         .selectFrom("generators")
         .where("generator_id", "=", generatorId)

@@ -8,6 +8,9 @@ type Dependencies = {
   repository: TenantRepository;
 };
 
+/**
+ * Create a tenant service. This file has all the business logic for the tenant service.
+ */
 export function createTenantServiceFactory(deps: Dependencies) {
   return {
     get: createFindTenantByIdService(deps),

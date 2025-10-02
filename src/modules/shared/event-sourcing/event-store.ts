@@ -24,7 +24,14 @@ const PostgreSQLEventStoreDefaultGlobalPosition = 0n;
 const PostgreSQLEventStoreDefaultStreamVersion = 0n;
 const DEFAULT_PARTITION = "default_partition";
 
-export type EventStore = ReturnType<typeof createAggregateStream>;
+export type EventStore = ReturnType<typeof createEventStore>;
+/**
+ * This function is inspired by the following emmett eventStore functions
+ *
+ * - src/packages/emmett/src/eventStore/eventStore.ts
+ * - src/packages/emmett-postgresql/src/eventStore/postgreSQLEventStore.ts
+ * - src/packages/emmett-sqlite/src/eventStore/SQLiteEventStore.ts
+ */
 export function createEventStore({
   db,
   logger,
@@ -36,32 +43,29 @@ export function createEventStore({
   readStream: ReadStream;
   appendToStream: AppendToStream;
 } {
-  const readStream: ReadStream = createReadStream({ db, logger });
-  const appendToStream: AppendToStream = createAppendToStream({ db, logger });
-  const { aggregateStream } = createAggregateStream(
-    {
-      readStream,
-      appendToStream,
-    },
-    { logger },
-  );
+  const readStream = createReadStream({ db, logger });
+
+  /**
+   * The returned object is consumed by the handler created by the DeciderCommandHandler function.
+   */
   return {
-    aggregateStream,
+    aggregateStream: createAggregateStream({ readStream }, { logger }),
     readStream,
-    appendToStream,
+    appendToStream: createAppendToStream({ db, logger }),
   };
 }
 
+// This is how emmett extends the options of the readStream and appendToStream functions.
 type ExtendedOptions = {
   partition?: string;
   streamType?: string;
 };
-type MyAppendToStreamOptions = AppendToStreamOptions & ExtendedOptions;
-type MyReadStreamOptions = ReadStreamOptions & ExtendedOptions;
+type ExtendedAppendToStreamOptions = AppendToStreamOptions & ExtendedOptions;
+type ExtendedReadStreamOptions = ReadStreamOptions & ExtendedOptions;
 
 export type ReadStream = <EventType extends Event>(
   stream: string,
-  options?: MyReadStreamOptions,
+  options?: ExtendedReadStreamOptions,
 ) => Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>>;
 
 function createReadStream({
@@ -73,7 +77,7 @@ function createReadStream({
 }): ReadStream {
   return async function readStream<EventType extends Event>(
     streamName: string,
-    options?: MyReadStreamOptions,
+    options?: ExtendedReadStreamOptions,
   ) {
     const partition = options?.partition ?? DEFAULT_PARTITION;
     logger.info({ streamName, options, partition }, "readStream");
@@ -89,7 +93,7 @@ function createReadStream({
 
     const streamExists = !!streamRow;
     const currentStreamVersion = streamRow
-      ? BigInt(streamRow.stream_position as unknown as string)
+      ? BigInt(streamRow.stream_position)
       : PostgreSQLEventStoreDefaultStreamVersion;
 
     // Build events query
@@ -110,15 +114,15 @@ function createReadStream({
 
     const from: bigint | undefined =
       options && typeof options === "object" && "from" in options
-        ? (options as { from: bigint }).from
+        ? options.from
         : undefined;
     const to: bigint | undefined =
       options && typeof options === "object" && "to" in options
-        ? (options as { to: bigint }).to
+        ? options.to
         : undefined;
     const maxCount: bigint | undefined =
       options && typeof options === "object" && "maxCount" in options
-        ? (options as { maxCount?: bigint }).maxCount
+        ? options.maxCount
         : undefined;
 
     if (from !== undefined) {
@@ -142,33 +146,33 @@ function createReadStream({
       >;
       return {
         kind: "Event" as const,
-        type: row.message_type as string,
-        data: row.message_data as Record<string, unknown>,
+        type: row.message_type,
+        data: row.message_data,
         metadata: {
           ...baseMetadata,
-          messageId: row.message_id as string,
+          messageId: row.message_id,
           streamName,
           streamPosition,
           globalPosition,
         },
-      } as unknown;
+      };
     });
 
     return {
-      events: events as unknown as ReadStreamResult<
+      events: events as ReadStreamResult<
         EventType,
         PostgresReadEventMetadata
       >["events"],
       currentStreamVersion,
       streamExists,
-    } as ReadStreamResult<EventType, PostgresReadEventMetadata>;
+    };
   };
 }
 
 type AppendToStream = <EventType extends Event>(
   streamName: string,
   events: EventType[],
-  options?: MyAppendToStreamOptions,
+  options?: ExtendedAppendToStreamOptions,
 ) => Promise<AppendToStreamResultWithGlobalPosition>;
 
 function createAppendToStream({
@@ -181,7 +185,7 @@ function createAppendToStream({
   return async function appendToStream<EventType extends Event>(
     streamId: string,
     events: EventType[],
-    options?: MyAppendToStreamOptions,
+    options?: ExtendedAppendToStreamOptions,
   ) {
     const partition = options?.partition ?? DEFAULT_PARTITION;
     const streamType = options?.streamType ?? "unknown";
@@ -274,20 +278,17 @@ function createAppendToStream({
         const streamPosition = basePos + BigInt(index + 1);
         const messageMetadata = {
           messageId,
-          ...("metadata" in e
-            ? ((e as unknown as { metadata?: unknown }).metadata ?? {})
-            : {}),
+          ...("metadata" in e ? (e.metadata ?? {}) : {}),
         } as Record<string, unknown>;
         return {
           stream_id: streamId,
           stream_position: streamPosition.toString(),
           partition,
-          message_data: (e as unknown as { data: unknown })
-            .data as unknown as DBSchema["messages"]["message_data"],
+          message_data: e.data as DBSchema["messages"]["message_data"],
           message_metadata:
-            messageMetadata as unknown as DBSchema["messages"]["message_metadata"],
+            messageMetadata as DBSchema["messages"]["message_metadata"],
           message_schema_version: "1",
-          message_type: (e as unknown as { type: string }).type,
+          message_type: e.type,
           message_kind: "E",
           message_id: messageId,
           is_archived: false,
@@ -334,17 +335,11 @@ type AggregateStream = <State, EventType extends Event>(
 function createAggregateStream(
   {
     readStream,
-    appendToStream,
   }: {
     readStream: ReadStream;
-    appendToStream: AppendToStream;
   },
   { logger }: { logger: Logger },
-): {
-  aggregateStream: AggregateStream;
-  readStream: ReadStream;
-  appendToStream: AppendToStream;
-} {
+): AggregateStream {
   /**
    * This function is pretty much a copy of the emmett aggregateStream function found in `src/packages/emmett-postgresql/src/eventStore/postgreSQLEventStore.ts`
    */
@@ -371,6 +366,7 @@ function createAggregateStream(
       PostgreSQLEventStoreDefaultStreamVersion,
     );
 
+    // This is where we fold the events to get the current state.
     const state = result.events.reduce(
       (state, event) => (event ? evolve(state, event) : state),
       initialState(),
@@ -383,10 +379,5 @@ function createAggregateStream(
     };
   };
 
-  // Returning only aggregateStream causes a type error. We could address it later.
-  return {
-    aggregateStream,
-    readStream,
-    appendToStream,
-  };
+  return aggregateStream;
 }

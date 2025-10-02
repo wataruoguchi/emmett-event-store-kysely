@@ -8,8 +8,6 @@ import {
 import type { GeneratorRepository } from "../repository/generator.repo.js";
 import type { GeneratorEventHandler } from "./event-sourcing/generator.event-handler.js";
 
-export type GeneratorService = ReturnType<typeof createGeneratorServiceFactory>;
-
 type Dependencies = {
   handler: GeneratorEventHandler;
   repository: GeneratorRepository;
@@ -17,7 +15,10 @@ type Dependencies = {
 };
 
 type GetGenerator = ReturnType<typeof createGetGeneratorService>;
-
+export type GeneratorService = ReturnType<typeof createGeneratorServiceFactory>;
+/**
+ * Create a generator service. This file has all the business logic for the generator service.
+ */
 export function createGeneratorServiceFactory(deps: Dependencies) {
   const get: GetGenerator = createGetGeneratorService(deps);
 

@@ -14,6 +14,9 @@ import {
   type GeneratorService,
 } from "../service/generator.service.js";
 
+/**
+ * Like index.ts, this file is the entry point for the generator module.
+ */
 export function createGeneratorService(
   { tenantService }: { tenantService: TenantService },
   { db, logger }: { db: DatabaseExecutor; logger: Logger },
@@ -30,6 +33,9 @@ export function createGeneratorService(
   });
 }
 
+/**
+ * Create a generator app. This function has all the HTTP logic for the generator app.
+ */
 function createGeneratorApp({
   generatorService,
   logger,

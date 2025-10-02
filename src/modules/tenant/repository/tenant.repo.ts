@@ -3,6 +3,9 @@ import type { Logger } from "../../shared/infra/logger.js";
 import type { TenantEntity } from "../domain/tenant.entity.js";
 
 export type TenantRepository = ReturnType<typeof createTenantRepository>;
+/**
+ * Create a tenant repository. This file has all the database logic for the tenant repository.
+ */
 export function createTenantRepository({
   db,
   logger,

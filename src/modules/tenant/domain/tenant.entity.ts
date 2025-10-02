@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const TenantEntitySchema = z.object({
   id: z.uuid(),
-  tenantId: z.string(),
+  tenantId: z.string(), // TODO: We want to deprecate tenant_id and use id instead.
   name: z.string(),
 });
 
