@@ -343,10 +343,7 @@ function createAggregateStream(
   /**
    * This function is pretty much a copy of the emmett aggregateStream function found in `src/packages/emmett-postgresql/src/eventStore/postgreSQLEventStore.ts`
    */
-  const aggregateStream: AggregateStream = async function aggregateStream<
-    State,
-    EventType extends Event,
-  >(
+  return async function aggregateStream<State, EventType extends Event>(
     streamName: string,
     options: AggregateStreamOptions<
       State,
@@ -378,6 +375,4 @@ function createAggregateStream(
       streamExists: result.streamExists,
     };
   };
-
-  return aggregateStream;
 }
