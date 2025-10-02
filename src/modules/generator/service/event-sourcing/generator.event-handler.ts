@@ -139,12 +139,12 @@ function createDecide(getContext: () => AppContext) {
     },
     deleteGenerator: (command: DeleteGenerator): GeneratorDeleted => {
       const {
-        data: { generatorId },
+        data: { generatorId, tenantId },
       } = command;
       if (!generatorId) throw new IllegalStateError("ID Expected");
       return {
         type: "GeneratorDeleted",
-        data: { generatorId },
+        data: { generatorId, tenantId },
         metadata: buildMessageMetadataFromContext(),
       };
     },
@@ -294,7 +294,7 @@ type GeneratorUpdated = Event<
 >;
 type GeneratorDeleted = Event<
   "GeneratorDeleted",
-  GeneratorIdOnly,
+  GeneratorIdOnly & { tenantId: string },
   EventMetadata
 >;
 type DomainEvent = GeneratorCreated | GeneratorUpdated | GeneratorDeleted;

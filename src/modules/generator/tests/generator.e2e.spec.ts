@@ -80,7 +80,7 @@ describe("Generator Integration", () => {
 
   describe("should update a generator", () => {
     let generatorId: string;
-    beforeAll(async () => {
+    beforeEach(async () => {
       const generatorData = generateGeneratorData();
       const response = await app.request(
         `/api/tenants/${tenantId}/generators`,
@@ -105,6 +105,19 @@ describe("Generator Integration", () => {
           body: JSON.stringify({
             isDeleted: false,
             name: "Updated Generator",
+          }),
+        },
+      );
+      expect(response.status).toBe(201);
+    });
+
+    it("should delete a generator", async () => {
+      const response = await app.request(
+        `/api/tenants/${tenantId}/generators/${generatorId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            isDeleted: true,
           }),
         },
       );
@@ -138,6 +151,57 @@ describe("Generator Integration", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.generator_id).toEqual(generatorId);
+    });
+  });
+
+  describe("should get a deleted generator by id", () => {
+    let generatorId: string;
+    beforeAll(async () => {
+      await (async function createGenerator() {
+        const generatorData = generateGeneratorData();
+        const response = await app.request(
+          `/api/tenants/${tenantId}/generators`,
+          {
+            method: "POST",
+            body: JSON.stringify(generatorData),
+          },
+        );
+        const json = await response.json();
+        generatorId = json.generatorId;
+      })();
+      await (async function updateGenerator() {
+        await app.request(
+          `/api/tenants/${tenantId}/generators/${generatorId}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ name: "It will be deleted" }),
+          },
+        );
+      })();
+      await project();
+      await (async function deleteGenerator() {
+        await app.request(
+          `/api/tenants/${tenantId}/generators/${generatorId}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ isDeleted: true }),
+          },
+        );
+      })();
+      await project();
+    });
+
+    it("should get a generator by id", async () => {
+      const response = await app.request(
+        `/api/tenants/${tenantId}/generators/${generatorId}`,
+        {
+          method: "GET",
+        },
+      );
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.generator_id).toEqual(generatorId);
+      expect(body.is_deleted).toBe(true);
     });
   });
 

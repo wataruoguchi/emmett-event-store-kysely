@@ -90,8 +90,7 @@ export function generatorsProjection(): ProjectionRegistry {
               last_stream_position: event.metadata.streamPosition.toString(),
               last_global_position: event.metadata.globalPosition.toString(),
             })
-            .where("tenant_id", "=", data.tenantId)
-            .where("generator_id", "=", data.generatorId)
+            .where("stream_id", "=", event.metadata.streamId)
             .where("partition", "=", partition)
             .execute();
         });
@@ -99,9 +98,6 @@ export function generatorsProjection(): ProjectionRegistry {
     ],
     GeneratorDeleted: [
       async ({ db, partition }, event) => {
-        const data = event.data as Pick<GeneratorEventData, "tenantId"> & {
-          generatorId: string;
-        };
         await upsertIfNewer(db, event, async (q) => {
           await q
             .updateTable("generators")
@@ -110,8 +106,7 @@ export function generatorsProjection(): ProjectionRegistry {
               last_stream_position: event.metadata.streamPosition.toString(),
               last_global_position: event.metadata.globalPosition.toString(),
             })
-            .where("tenant_id", "=", data.tenantId)
-            .where("generator_id", "=", data.generatorId)
+            .where("stream_id", "=", event.metadata.streamId)
             .where("partition", "=", partition)
             .execute();
         });
