@@ -284,7 +284,6 @@ describe("Cart Integration", () => {
         .where("cart_id", "=", cartId)
         .executeTakeFirstOrThrow();
 
-      console.log({ row });
       const items = row.items_json as {
         items: Array<{
           sku: string;
