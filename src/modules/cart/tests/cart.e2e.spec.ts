@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import z from "zod";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
-import { createEventStore } from "../../shared/event-sourcing/event-store.js";
+import { createEventStore } from "../../shared/event-sourcing/event-store/event-store.js";
 import { createProjectionRunner } from "../../shared/event-sourcing/projections/runner.js";
 import { createProjectionRegistry } from "../../shared/event-sourcing/projections/types.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";

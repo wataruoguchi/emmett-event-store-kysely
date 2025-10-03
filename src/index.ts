@@ -10,6 +10,7 @@ import {
   createTenantApp,
   createTenantService,
 } from "./modules/tenant/tenant.index.js";
+import { createCartApp, createCartService } from "./modules/cart/cart.index.js";
 
 const app = new Hono();
 const db = getDb();
@@ -31,6 +32,17 @@ app.route(
   "",
   createGeneratorApp({
     generatorService: createGeneratorService({ tenantService }, { db, logger }),
+    logger,
+  }),
+);
+
+/**
+ * Cart module starts here
+ */
+app.route(
+  "",
+  createCartApp({
+    cartService: createCartService({ tenantService }, { db, logger }),
     logger,
   }),
 );

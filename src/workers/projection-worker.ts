@@ -9,7 +9,6 @@ import { createProjectionRegistry } from "../modules/shared/event-sourcing/proje
 import { getDb } from "../modules/shared/infra/db.js";
 import { logger } from "../modules/shared/infra/logger.js";
 
-// TODO: Take the partition as an argument.
 const partition = process.argv[2];
 if (!partition) {
   throw new Error("Partition is required");
@@ -23,7 +22,7 @@ main(partition).catch((err) => {
 /**
  * Code example for the projection worker.
  * It can be used to project events from multiple partitions.
- * e.g., the generators-read-model projection runner can be used to project events for partition A, partition B, and partition C.
+ * e.g., the read-model projection runner can be used to project events for partition A, partition B, and partition C.
  */
 async function main(partition: string) {
   const db = getDb();
@@ -31,7 +30,7 @@ async function main(partition: string) {
   const registry = createProjectionRegistry(generatorsProjection());
   const runner = createProjectionRunner({ db, readStream, registry });
 
-  const subscriptionId = "generators-read-model-by-worker";
+  const subscriptionId = "read-model-by-worker";
   const batchSize = 200;
   const pollIntervalMs = Number(process.env.PROJECTION_POLL_MS ?? 1000);
   let lastStreamId: string | null = null; // keyset cursor
@@ -68,9 +67,7 @@ async function main(partition: string) {
     if (streams.length > 0) {
       lastStreamId = streams[streams.length - 1].stream_id;
     } else {
-      logger.info({ partition }, "No streams found");
-      // Exit the loop.
-      break;
+      lastStreamId = null;
     }
 
     await new Promise((r) => setTimeout(r, pollIntervalMs));
