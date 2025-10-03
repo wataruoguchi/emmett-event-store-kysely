@@ -64,10 +64,14 @@ function createCartApp({
     const data = await c.req.json();
     try {
       const result = await cartService.create({ ...data, tenantId });
-      const maybeState = (
-        result as { newState?: { data?: { cartId?: string }; cartId?: string } }
-      ).newState;
-      const cartId = maybeState?.data?.cartId ?? maybeState?.cartId;
+      interface CartCreateResult {
+        newState?: {
+          data?: { cartId?: string };
+          cartId?: string;
+        };
+      }
+      const { newState } = result as CartCreateResult;
+      const cartId = newState?.data?.cartId ?? newState?.cartId;
       return c.json({ message: "Created!", cartId }, 201);
     } catch (error) {
       logger.error({ error }, "createCart");
