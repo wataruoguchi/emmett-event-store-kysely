@@ -56,6 +56,9 @@
     "@event-driven-io/emmett": "^0.38.5",
     "kysely": "^0.28.7"
   },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.9.5"
+  },
   "keywords": [
     "emmett",
     "event-store",
