@@ -4,6 +4,29 @@ import type {
   ProjectionRegistry,
 } from "../../../shared/event-sourcing/projections/types.js";
 
+type CartReadItem = {
+  sku: string;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+};
+
+function parseItemsJson(raw: unknown): CartReadItem[] {
+  const val = raw as unknown;
+  if (Array.isArray(val)) return val as CartReadItem[];
+  if (val === null || val === undefined) return [] as CartReadItem[];
+  if (typeof val === "string") {
+    const s = val.trim();
+    if (s.length === 0) return [] as CartReadItem[];
+    try {
+      return JSON.parse(s) as CartReadItem[];
+    } catch {
+      return [] as CartReadItem[];
+    }
+  }
+  return [] as CartReadItem[];
+}
+
 type CartEventData = {
   tenantId: string;
   cartId: string;
@@ -81,59 +104,7 @@ export function cartsProjection(): ProjectionRegistry {
             .where("stream_id", "=", event.metadata.streamId)
             .where("partition", "=", partition)
             .executeTakeFirst();
-          const items: {
-            sku: string;
-            name: string;
-            unitPrice: number;
-            quantity: number;
-          }[] = (() => {
-            const val = row?.items_json as unknown;
-            if (Array.isArray(val))
-              return val as {
-                sku: string;
-                name: string;
-                unitPrice: number;
-                quantity: number;
-              }[];
-            if (val === null || val === undefined)
-              return [] as {
-                sku: string;
-                name: string;
-                unitPrice: number;
-                quantity: number;
-              }[];
-            if (typeof val === "string") {
-              const s = val.trim();
-              if (s.length === 0)
-                return [] as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              try {
-                return JSON.parse(s) as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              } catch {
-                return [] as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              }
-            }
-            return [] as {
-              sku: string;
-              name: string;
-              unitPrice: number;
-              quantity: number;
-            }[];
-          })();
+          const items: CartReadItem[] = parseItemsJson(row?.items_json);
           const existing = items.find((i) => i.sku === data.item?.sku);
           if (existing) existing.quantity += data.item?.quantity ?? 0;
           else if (data.item) items.push(data.item);
@@ -161,59 +132,7 @@ export function cartsProjection(): ProjectionRegistry {
             .where("stream_id", "=", event.metadata.streamId)
             .where("partition", "=", partition)
             .executeTakeFirst();
-          let items: {
-            sku: string;
-            name: string;
-            unitPrice: number;
-            quantity: number;
-          }[] = (() => {
-            const val = row?.items_json as unknown;
-            if (Array.isArray(val))
-              return val as {
-                sku: string;
-                name: string;
-                unitPrice: number;
-                quantity: number;
-              }[];
-            if (val === null || val === undefined)
-              return [] as {
-                sku: string;
-                name: string;
-                unitPrice: number;
-                quantity: number;
-              }[];
-            if (typeof val === "string") {
-              const s = val.trim();
-              if (s.length === 0)
-                return [] as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              try {
-                return JSON.parse(s) as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              } catch {
-                return [] as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              }
-            }
-            return [] as {
-              sku: string;
-              name: string;
-              unitPrice: number;
-              quantity: number;
-            }[];
-          })();
+          let items: CartReadItem[] = parseItemsJson(row?.items_json);
           items = items
             .map((i) =>
               i.sku === data.sku
@@ -261,59 +180,7 @@ export function cartsProjection(): ProjectionRegistry {
             .where("partition", "=", partition)
             .executeTakeFirst();
 
-          const items: {
-            sku: string;
-            name: string;
-            unitPrice: number;
-            quantity: number;
-          }[] = (() => {
-            const val = row?.items_json as unknown;
-            if (Array.isArray(val))
-              return val as {
-                sku: string;
-                name: string;
-                unitPrice: number;
-                quantity: number;
-              }[];
-            if (val === null || val === undefined)
-              return [] as {
-                sku: string;
-                name: string;
-                unitPrice: number;
-                quantity: number;
-              }[];
-            if (typeof val === "string") {
-              const s = val.trim();
-              if (s.length === 0)
-                return [] as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              try {
-                return JSON.parse(s) as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              } catch {
-                return [] as {
-                  sku: string;
-                  name: string;
-                  unitPrice: number;
-                  quantity: number;
-                }[];
-              }
-            }
-            return [] as {
-              sku: string;
-              name: string;
-              unitPrice: number;
-              quantity: number;
-            }[];
-          })();
+          const items: CartReadItem[] = parseItemsJson(row?.items_json);
 
           const { orderId, total } =
             (event.data as { orderId?: string; total?: number }) ?? {};
