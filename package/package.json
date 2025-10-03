@@ -1,0 +1,37 @@
+{
+  "name": "@wataruoguchi/event-sourcing",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/event-store/index.js",
+  "module": "dist/event-store/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/event-store/index.d.ts",
+      "import": "./dist/event-store/index.js"
+    },
+    "./event-store": {
+      "types": "./dist/event-store/index.d.ts",
+      "import": "./dist/event-store/index.js"
+    },
+    "./projections": {
+      "import": "./dist/projections/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "@event-driven-io/emmett": "^0.38.5",
+    "kysely": "^0.28.7"
+  }
+}
