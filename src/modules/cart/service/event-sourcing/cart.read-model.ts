@@ -12,7 +12,7 @@ type CartReadItem = {
 };
 
 function parseItemsJson(raw: unknown): CartReadItem[] {
-  const val = raw as unknown;
+  const val = raw;
   if (Array.isArray(val)) return val as CartReadItem[];
   if (val === null || val === undefined) return [] as CartReadItem[];
   if (typeof val === "string") {
