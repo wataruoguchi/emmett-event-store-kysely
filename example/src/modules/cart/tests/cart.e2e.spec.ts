@@ -1,8 +1,8 @@
-import { createEventStore } from "@wataruoguchi/event-sourcing";
+import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/event-sourcing/projections";
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import z from "zod";

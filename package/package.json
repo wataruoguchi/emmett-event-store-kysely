@@ -1,5 +1,5 @@
 {
-  "name": "@wataruoguchi/event-sourcing",
+  "name": "@wataruoguchi/emmett-event-store-kysely",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/event-store/index.js",

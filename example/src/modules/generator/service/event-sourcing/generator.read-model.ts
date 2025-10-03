@@ -1,7 +1,7 @@
 import type {
   ProjectionEvent,
   ProjectionRegistry,
-} from "@wataruoguchi/event-sourcing/projections";
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { DatabaseExecutor } from "../../../shared/infra/db.js";
 
 type GeneratorEventData = {

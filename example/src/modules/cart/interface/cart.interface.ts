@@ -1,4 +1,4 @@
-import { createEventStore } from "@wataruoguchi/event-sourcing";
+import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import { Hono } from "hono";
 import {
   createContextMiddleware,

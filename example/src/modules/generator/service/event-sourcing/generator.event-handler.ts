@@ -6,7 +6,7 @@ import {
   type Command,
   type Event,
 } from "@event-driven-io/emmett";
-import type { EventStore } from "@wataruoguchi/event-sourcing";
+import type { EventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import type { AppContext } from "../../../shared/hono/context-middleware.js";
 import type { GeneratorEntity } from "../../domain/generator.entity.js";
 

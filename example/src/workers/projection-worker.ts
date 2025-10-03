@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { createReadStream } from "@wataruoguchi/event-sourcing";
+import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/event-sourcing/projections";
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { SelectQueryBuilder } from "kysely";
 import type { DB as DBSchema } from "kysely-codegen";
 import { generatorsProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";

@@ -1,9 +1,9 @@
 import { faker } from "@faker-js/faker";
-import { createReadStream } from "@wataruoguchi/event-sourcing";
+import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/event-sourcing/projections";
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import z from "zod";
