@@ -194,7 +194,7 @@ function createDecide(getContext: () => AppContext) {
         return handlers.cancelCart(command);
       default: {
         // @ts-expect-error
-        const _never: never = command;
+        const _notExistingCommandType: never = command.type;
         throw new EmmettError("Unknown command type");
       }
     }
