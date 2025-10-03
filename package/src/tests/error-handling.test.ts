@@ -92,7 +92,7 @@ describe("Error Handling", () => {
 
   describe("Edge Cases", () => {
     it("should handle very large numbers in metadata", () => {
-      const handler: ProjectionHandler = (ctx, event) => {
+      const handler: ProjectionHandler = (_ctx, event) => {
         expect(typeof event.metadata.streamPosition).toBe("bigint");
         expect(typeof event.metadata.globalPosition).toBe("bigint");
       };
@@ -113,7 +113,7 @@ describe("Error Handling", () => {
     });
 
     it("should handle special characters in partition names", () => {
-      const handler: ProjectionHandler = (ctx, event) => {
+      const handler: ProjectionHandler = (ctx, _event) => {
         expect(typeof ctx.partition).toBe("string");
       };
 
@@ -143,7 +143,7 @@ describe("Error Handling", () => {
     });
 
     it("should handle complex event data structures", () => {
-      const handler: ProjectionHandler = (ctx, event) => {
+      const handler: ProjectionHandler = (_ctx, event) => {
         expect(typeof event.data).toBe("object");
       };
 

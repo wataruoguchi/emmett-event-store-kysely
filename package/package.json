@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/event-store/index.js",
   "module": "dist/event-store/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/types.d.ts",
   "files": [
     "dist"
   ],
