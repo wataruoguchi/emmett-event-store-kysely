@@ -1,8 +1,8 @@
 import type {
-  DatabaseExecutor,
   ProjectionEvent,
   ProjectionRegistry,
-} from "../../../shared/event-sourcing/projections/types.js";
+} from "@wataruoguchi/event-sourcing/projections";
+import type { DatabaseExecutor } from "../../../shared/infra/db.js";
 
 type CartReadItem = {
   sku: string;
@@ -58,7 +58,7 @@ async function upsertIfNewer(
   await apply(db);
 }
 
-export function cartsProjection(): ProjectionRegistry {
+export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
   return {
     CartCreated: [
       async ({ db, partition }, event) => {

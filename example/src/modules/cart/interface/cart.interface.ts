@@ -1,5 +1,5 @@
+import { createEventStore } from "@wataruoguchi/event-sourcing";
 import { Hono } from "hono";
-import { createEventStore } from "../../shared/event-sourcing/event-store/event-store.js";
 import {
   createContextMiddleware,
   getContext,

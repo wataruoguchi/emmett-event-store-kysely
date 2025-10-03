@@ -1,12 +1,13 @@
-//
+import { createEventStore } from "@wataruoguchi/event-sourcing";
+import {
+  createProjectionRegistry,
+  createProjectionRunner,
+} from "@wataruoguchi/event-sourcing/projections";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import z from "zod";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
-import { createEventStore } from "../../shared/event-sourcing/event-store/event-store.js";
-import { createProjectionRunner } from "../../shared/event-sourcing/projections/runner.js";
-import { createProjectionRegistry } from "../../shared/event-sourcing/projections/types.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
 import { createTenantService } from "../../tenant/tenant.index.js";
@@ -38,7 +39,11 @@ describe("Cart Integration", () => {
 
     const { readStream } = createEventStore({ db, logger });
     const registry = createProjectionRegistry(cartsProjection());
-    const runner = createProjectionRunner({ db, readStream, registry });
+    const runner = createProjectionRunner({
+      db,
+      readStream,
+      registry,
+    });
     project = async ({ batchSize = 500 } = {}) => {
       const streams = await db
         .selectFrom("streams")

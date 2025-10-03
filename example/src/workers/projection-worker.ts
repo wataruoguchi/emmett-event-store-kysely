@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
+import { createReadStream } from "@wataruoguchi/event-sourcing";
+import {
+  createProjectionRegistry,
+  createProjectionRunner,
+} from "@wataruoguchi/event-sourcing/projections";
 import type { SelectQueryBuilder } from "kysely";
 import type { DB as DBSchema } from "kysely-codegen";
 import { generatorsProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
-import { createReadStream } from "../modules/shared/event-sourcing/event-store/read-stream.js";
-import { createProjectionRunner } from "../modules/shared/event-sourcing/projections/runner.js";
-import { createProjectionRegistry } from "../modules/shared/event-sourcing/projections/types.js";
 import { getDb } from "../modules/shared/infra/db.js";
 import { logger } from "../modules/shared/infra/logger.js";
 
@@ -28,7 +30,11 @@ async function main(partition: string) {
   const db = getDb();
   const readStream = createReadStream({ db, logger });
   const registry = createProjectionRegistry(generatorsProjection());
-  const runner = createProjectionRunner({ db, readStream, registry });
+  const runner = createProjectionRunner({
+    db,
+    readStream,
+    registry,
+  });
 
   const subscriptionId = "read-model-by-worker";
   const batchSize = 200;

@@ -6,7 +6,7 @@ import {
   type Command,
   type Event,
 } from "@event-driven-io/emmett";
-import type { EventStore } from "../../../shared/event-sourcing/event-store/event-store.js";
+import type { EventStore } from "@wataruoguchi/event-sourcing";
 import type { AppContext } from "../../../shared/hono/context-middleware.js";
 import type { CartEntity, CartItem } from "../../domain/cart.entity.js";
 
