@@ -3,7 +3,7 @@
 import type { SelectQueryBuilder } from "kysely";
 import type { DB as DBSchema } from "kysely-codegen";
 import { generatorsProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
-import { createEventStore } from "../modules/shared/event-sourcing/event-store.js";
+import { createReadStream } from "../modules/shared/event-sourcing/event-store/read-stream.js";
 import { createProjectionRunner } from "../modules/shared/event-sourcing/projections/runner.js";
 import { createProjectionRegistry } from "../modules/shared/event-sourcing/projections/types.js";
 import { getDb } from "../modules/shared/infra/db.js";
@@ -27,7 +27,7 @@ main(partition).catch((err) => {
  */
 async function main(partition: string) {
   const db = getDb();
-  const { readStream } = createEventStore({ db, logger });
+  const readStream = createReadStream({ db, logger });
   const registry = createProjectionRegistry(generatorsProjection());
   const runner = createProjectionRunner({ db, readStream, registry });
 

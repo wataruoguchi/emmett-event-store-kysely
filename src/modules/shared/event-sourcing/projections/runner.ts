@@ -1,5 +1,5 @@
 import type { Event } from "@event-driven-io/emmett";
-import type { ReadStream } from "../event-store.js";
+import type { ReadStream } from "../event-store/event-store.js";
 import type {
   DatabaseExecutor,
   ProjectionEvent,
@@ -29,7 +29,7 @@ export function createProjectionRunner({
 }: ProjectionRunnerDeps) {
   type EventWithMetadata = Event & {
     metadata: {
-      streamName: string;
+      streamId: string;
       streamPosition: bigint;
       globalPosition: bigint;
     };
@@ -129,7 +129,7 @@ export function createProjectionRunner({
         type: ev.type,
         data: ev.data,
         metadata: {
-          streamId: ev.metadata.streamName,
+          streamId: ev.metadata.streamId,
           streamPosition: ev.metadata.streamPosition,
           globalPosition: ev.metadata.globalPosition,
         },
