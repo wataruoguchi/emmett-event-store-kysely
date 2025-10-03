@@ -13,7 +13,7 @@ import {
   PostgreSQLEventStoreDefaultStreamVersion,
   type Dependencies,
   type ExtendedOptions,
-} from "./types-consts.js";
+} from "../types.js";
 
 const PostgreSQLEventStoreDefaultGlobalPosition = 0n;
 
@@ -144,7 +144,7 @@ async function upsertStreamRow(
       .insertInto("streams")
       .values({
         stream_id: streamId,
-        stream_position: nextStreamPosition.toString(),
+        stream_position: nextStreamPosition,
         partition,
         stream_type: streamType,
         stream_metadata: {},
@@ -157,11 +157,11 @@ async function upsertStreamRow(
   if (typeof expected === "bigint") {
     const updatedRow = await executor
       .updateTable("streams")
-      .set({ stream_position: nextStreamPosition.toString() })
+      .set({ stream_position: nextStreamPosition })
       .where("stream_id", "=", streamId)
       .where("partition", "=", partition)
       .where("is_archived", "=", false)
-      .where("stream_position", "=", basePos.toString())
+      .where("stream_position", "=", basePos)
       .returning("stream_position")
       .executeTakeFirst();
     if (!updatedRow) {
@@ -172,7 +172,7 @@ async function upsertStreamRow(
 
   await executor
     .updateTable("streams")
-    .set({ stream_position: nextStreamPosition.toString() })
+    .set({ stream_position: nextStreamPosition })
     .where("stream_id", "=", streamId)
     .where("partition", "=", partition)
     .where("is_archived", "=", false)
@@ -196,7 +196,7 @@ function buildMessagesToInsert<EventType extends Event>(
     };
     return {
       stream_id: streamId,
-      stream_position: streamPosition.toString(),
+      stream_position: streamPosition,
       partition,
       message_data: e.data as unknown,
       message_metadata: messageMetadata as unknown,
@@ -205,6 +205,7 @@ function buildMessagesToInsert<EventType extends Event>(
       message_kind: "E",
       message_id: messageId,
       is_archived: false,
+      created: new Date(),
     };
   });
 }
@@ -213,7 +214,7 @@ async function insertMessagesAndGetLastGlobalPosition(
   executor: Dependencies["db"],
   messagesToInsert: Array<{
     stream_id: string;
-    stream_position: string;
+    stream_position: bigint;
     partition: string;
     message_data: unknown;
     message_metadata: unknown;
@@ -222,6 +223,7 @@ async function insertMessagesAndGetLastGlobalPosition(
     message_kind: string;
     message_id: string;
     is_archived: boolean;
+    created: Date;
   }>,
 ): Promise<bigint> {
   const inserted = await executor

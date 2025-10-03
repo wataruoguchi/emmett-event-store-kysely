@@ -18,15 +18,17 @@
       "import": "./dist/event-store/index.js"
     },
     "./projections": {
+      "types": "./dist/projections/index.d.ts",
       "import": "./dist/projections/index.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },

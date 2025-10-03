@@ -4,8 +4,7 @@
   "scripts": {
     "test": "cd example && vitest run",
     "prepare": "husky",
-    "format": "biome format --write",
-    "type-check": "tsc --noEmit"
+    "format": "biome format --write"
   },
   "dependencies": {},
   "devDependencies": {

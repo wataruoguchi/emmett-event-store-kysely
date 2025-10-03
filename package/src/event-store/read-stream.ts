@@ -11,21 +11,28 @@ import {
   PostgreSQLEventStoreDefaultStreamVersion,
   type Dependencies,
   type ExtendedOptions,
-} from "./types-consts.js";
+} from "../types.js";
 
 type PostgresReadEventMetadata = ReadEventMetadataWithGlobalPosition;
 type ExtendedReadStreamOptions = ReadStreamOptions & ExtendedOptions;
 
+// More flexible options for projection runner compatibility
+type ProjectionReadStreamOptions = {
+  from?: bigint;
+  to?: bigint;
+  partition?: string;
+  maxCount?: bigint;
+};
+
 export type ReadStream = <EventType extends Event>(
   stream: string,
-  options?: ExtendedReadStreamOptions,
-  // deno-lint-ignore no-explicit-any
+  options?: ExtendedReadStreamOptions | ProjectionReadStreamOptions,
 ) => Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>>;
 
 export function createReadStream({ db, logger }: Dependencies): ReadStream {
   return async function readStream<EventType extends Event>(
     streamId: string,
-    options?: ExtendedReadStreamOptions,
+    options?: ExtendedReadStreamOptions | ProjectionReadStreamOptions,
   ): Promise<ReadStreamResult<EventType, PostgresReadEventMetadata>> {
     const partition = getPartition(options);
     logger.info({ streamId, options, partition }, "readStream");
@@ -57,7 +64,9 @@ export function createReadStream({ db, logger }: Dependencies): ReadStream {
   };
 }
 
-function parseRangeOptions(options?: ExtendedReadStreamOptions): {
+function parseRangeOptions(
+  options?: ExtendedReadStreamOptions | ProjectionReadStreamOptions,
+): {
   from?: bigint;
   to?: bigint;
   maxCount?: bigint;
@@ -112,10 +121,10 @@ function buildEventsQuery(
     .orderBy("stream_position");
 
   if (range.from !== undefined) {
-    q = q.where("stream_position", ">=", BigInt(range.from).toString());
+    q = q.where("stream_position", ">=", BigInt(range.from));
   }
   if (range.to !== undefined) {
-    q = q.where("stream_position", "<=", BigInt(range.to).toString());
+    q = q.where("stream_position", "<=", BigInt(range.to));
   }
   if (range.maxCount !== undefined) {
     q = q.limit(Number(range.maxCount));
@@ -154,7 +163,9 @@ function mapRowToEvent<EventType extends Event>(
   } as ReadEvent<EventType, PostgresReadEventMetadata>;
 }
 
-function getPartition(options?: ExtendedReadStreamOptions): string {
+function getPartition(
+  options?: ExtendedReadStreamOptions | ProjectionReadStreamOptions,
+): string {
   return options?.partition ?? DEFAULT_PARTITION;
 }
 
@@ -172,7 +183,7 @@ async function fetchStreamInfo(
     .executeTakeFirst();
 
   const currentStreamVersion = streamRow
-    ? BigInt((streamRow as { stream_position: string }).stream_position)
+    ? (streamRow as { stream_position: bigint }).stream_position
     : PostgreSQLEventStoreDefaultStreamVersion;
 
   return { currentStreamVersion, streamExists: !!streamRow };

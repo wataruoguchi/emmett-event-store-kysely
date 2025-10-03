@@ -1,10 +1,12 @@
 import type { Event } from "@event-driven-io/emmett";
-import type { DatabaseExecutor } from "../event-store/types-consts.js";
+import type { OnConflictBuilder } from "kysely";
+import type { EventStoreDBSchema } from "../db-schema.js";
 import type {
+  DatabaseExecutor,
   ProjectionEvent,
   ProjectionRegistry,
   ReadStream,
-} from "../event-store/types.js";
+} from "../types.js";
 
 export type SubscriptionCheckpoint = {
   subscriptionId: string;
@@ -12,17 +14,17 @@ export type SubscriptionCheckpoint = {
   lastProcessedPosition: bigint;
 };
 
-export type ProjectionRunnerDeps = {
-  db: DatabaseExecutor;
+export type ProjectionRunnerDeps<
+  T extends DatabaseExecutor = DatabaseExecutor,
+> = {
+  db: T;
   readStream: ReadStream;
-  registry: ProjectionRegistry;
+  registry: ProjectionRegistry<T>;
 };
 
-export function createProjectionRunner({
-  db,
-  readStream,
-  registry,
-}: ProjectionRunnerDeps) {
+export function createProjectionRunner<
+  T extends DatabaseExecutor = DatabaseExecutor,
+>({ db, readStream, registry }: ProjectionRunnerDeps<T>) {
   type EventWithMetadata = Event & {
     metadata: {
       streamId: string;
@@ -49,7 +51,7 @@ export function createProjectionRunner({
     if (existing) {
       const last = BigInt(
         String(
-          (existing as unknown as { lastProcessedPosition: unknown })
+          (existing as unknown as { lastProcessedPosition: bigint })
             .lastProcessedPosition,
         ),
       );
@@ -66,11 +68,14 @@ export function createProjectionRunner({
         subscription_id: subscriptionId,
         partition,
         version: 1,
-        last_processed_position: "0",
-        is_archived: false,
+        last_processed_position: 0n,
       })
-      .onConflict((oc) =>
-        oc.columns(["subscription_id", "partition", "version"]).doNothing(),
+      .onConflict(
+        (oc: OnConflictBuilder<EventStoreDBSchema, "subscriptions">) =>
+          oc.columns(["subscription_id", "partition", "version"]).doUpdateSet({
+            last_processed_position: (eb) =>
+              eb.ref("excluded.last_processed_position"),
+          }),
       )
       .execute();
 
@@ -88,7 +93,7 @@ export function createProjectionRunner({
   ) {
     await db
       .updateTable("subscriptions")
-      .set({ last_processed_position: lastProcessedPosition.toString() })
+      .set({ last_processed_position: lastProcessedPosition })
       .where("subscription_id", "=", subscriptionId)
       .where("partition", "=", partition)
       .execute();

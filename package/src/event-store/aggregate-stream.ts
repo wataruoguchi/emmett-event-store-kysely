@@ -6,11 +6,11 @@ import {
   type Event,
   type ReadEventMetadataWithGlobalPosition,
 } from "@event-driven-io/emmett";
-import type { ReadStream } from "./read-stream.js";
 import {
   PostgreSQLEventStoreDefaultStreamVersion,
   type Dependencies,
-} from "./types-consts.js";
+} from "../types.js";
+import type { ReadStream } from "./read-stream.js";
 
 type PostgresReadEventMetadata = ReadEventMetadataWithGlobalPosition;
 
