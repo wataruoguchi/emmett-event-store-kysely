@@ -63,6 +63,8 @@
     "emmett",
     "event-store",
     "kysely",
+    "postgres",
+    "postgresql",
     "Event Sourcing",
     "event-sourcing",
     "read-model",
