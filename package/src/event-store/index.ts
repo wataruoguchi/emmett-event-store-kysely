@@ -14,9 +14,12 @@ export type { ReadStream } from "./read-stream.js";
 export type EventStore = ReturnType<typeof createEventStore>;
 
 export { createReadStream } from "./read-stream.js";
-export function createEventStore(deps: Dependencies) {
-  const readStream = createReadStream(deps);
-  const appendToStream = createAppendToStream(deps);
-  const aggregateStream = createAggregateStream({ readStream }, deps);
+export function createEventStore<T = any>(deps: Dependencies<T>) {
+  const readStream = createReadStream(deps as unknown as Dependencies);
+  const appendToStream = createAppendToStream(deps as unknown as Dependencies);
+  const aggregateStream = createAggregateStream(
+    { readStream },
+    deps as unknown as Dependencies,
+  );
   return { readStream, appendToStream, aggregateStream };
 }

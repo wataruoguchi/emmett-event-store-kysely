@@ -1,10 +1,7 @@
-import type { Kysely, Transaction } from "kysely";
-import type { EventStoreDBSchema } from "./db-schema.js";
+import type { Kysely } from "kysely";
 
 // Database executor that works with any Kysely database
-export type DatabaseExecutor =
-  | Kysely<EventStoreDBSchema>
-  | Transaction<EventStoreDBSchema>;
+export type DatabaseExecutor<T = any> = Kysely<T>;
 
 export type Logger = {
   info: (obj: unknown, msg?: string) => void;
@@ -13,8 +10,8 @@ export type Logger = {
   debug?: (obj: unknown, msg?: string) => void;
 };
 
-export type Dependencies = {
-  db: DatabaseExecutor;
+export type Dependencies<T = any> = {
+  db: DatabaseExecutor<T>;
   logger: Logger;
 };
 
@@ -39,22 +36,22 @@ export type ProjectionEvent = {
   metadata: ProjectionEventMetadata;
 };
 
-export type ProjectionContext<T = DatabaseExecutor> = {
+export type ProjectionContext<T = DatabaseExecutor<any>> = {
   db: T;
   partition: string;
 };
 
-export type ProjectionHandler<T = DatabaseExecutor> = (
+export type ProjectionHandler<T = DatabaseExecutor<any>> = (
   ctx: ProjectionContext<T>,
   event: ProjectionEvent,
 ) => void | Promise<void>;
 
-export type ProjectionRegistry<T = DatabaseExecutor> = Record<
+export type ProjectionRegistry<T = DatabaseExecutor<any>> = Record<
   string,
   ProjectionHandler<T>[]
 >;
 
-export function createProjectionRegistry<T = DatabaseExecutor>(
+export function createProjectionRegistry<T = DatabaseExecutor<any>>(
   ...registries: ProjectionRegistry<T>[]
 ): ProjectionRegistry<T> {
   const combined: ProjectionRegistry<T> = {};
