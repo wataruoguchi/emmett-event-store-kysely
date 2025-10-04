@@ -1,5 +1,8 @@
 {
   "name": "@wataruoguchi/emmett-event-store-kysely",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.1.0",
   "description": "Emmett Event Store with Kysely",
   "author": "Wataru Oguchi",
