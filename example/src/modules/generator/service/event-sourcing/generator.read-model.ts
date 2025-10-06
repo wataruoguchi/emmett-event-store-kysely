@@ -3,15 +3,10 @@ import type {
   ProjectionRegistry,
 } from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { DatabaseExecutor } from "../../../shared/infra/db.js";
-
-type GeneratorEventData = {
-  tenantId: string;
-  generatorId: string;
-  name?: string;
-  address?: string;
-  generatorType?: string;
-  notes?: string | null;
-};
+import type {
+  GeneratorCreatedData,
+  GeneratorUpdatedData,
+} from "./generator.event-handler.js";
 
 async function upsertIfNewer(
   db: DatabaseExecutor,
@@ -36,17 +31,17 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
   return {
     GeneratorCreated: [
       async ({ db, partition }, event) => {
-        const data = event.data as GeneratorEventData;
+        const data = event.data as GeneratorCreatedData;
         await upsertIfNewer(db, event, async (q) => {
           await q
             .insertInto("generators")
             .values({
-              tenant_id: data.tenantId,
-              generator_id: data.generatorId,
-              name: data.name ?? "",
-              address: data.address ?? "",
-              generator_type: data.generatorType ?? "other",
-              notes: data.notes ?? null,
+              tenant_id: data.eventMeta.tenantId,
+              generator_id: data.eventMeta.generatorId,
+              name: data.eventData.name ?? "",
+              address: data.eventData.address ?? "",
+              generator_type: data.eventData.generatorType ?? "other",
+              notes: data.eventData.notes ?? null,
               is_deleted: false,
               stream_id: event.metadata.streamId,
               last_stream_position: event.metadata.streamPosition.toString(),
@@ -78,15 +73,15 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
     ],
     GeneratorUpdated: [
       async ({ db, partition }, event) => {
-        const data = event.data as GeneratorEventData;
+        const data = event.data as GeneratorUpdatedData;
         await upsertIfNewer(db, event, async (q) => {
           await q
             .updateTable("generators")
             .set({
-              name: data.name ?? undefined,
-              address: data.address ?? undefined,
-              generator_type: data.generatorType ?? undefined,
-              notes: data.notes ?? undefined,
+              name: data.eventData.name ?? undefined,
+              address: data.eventData.address ?? undefined,
+              generator_type: data.eventData.generatorType ?? undefined,
+              notes: data.eventData.notes ?? undefined,
               last_stream_position: event.metadata.streamPosition.toString(),
               last_global_position: event.metadata.globalPosition.toString(),
             })

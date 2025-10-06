@@ -21,9 +21,11 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("created", "timestamptz(3)", (col) =>
       col.notNull().defaultTo(sql`now()`),
     )
+    .addColumn("created_by", "text")
     .addColumn("updated", "timestamptz(3)", (col) =>
       col.notNull().defaultTo(sql`now()`),
     )
+    .addColumn("updated_by", "text")
     .addPrimaryKeyConstraint("pk_generators", [
       "tenant_id",
       "generator_id",

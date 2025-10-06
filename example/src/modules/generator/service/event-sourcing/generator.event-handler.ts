@@ -107,34 +107,51 @@ function createDecide(getContext: () => AppContext) {
       throw new IllegalStateError("Generator is not created or updated");
   }
   /**
-   * These functions are responsible for deciding the command's outcome using business rules.
+   * These functions are responsible for deciding the command's outcome using business rules and returning the event.
    * Although we should aggregate business rules into a single function, we should't/can't use async here.
    */
   const handlers = {
     createGenerator: (command: CreateGenerator): GeneratorCreated => {
-      const { data } = command;
+      const { data: rawData } = command;
+      const { tenantId, generatorId, ...data } = rawData;
       return {
         type: "GeneratorCreated",
-        data,
-        metadata: buildMessageMetadataFromContext(),
+        // This 'data' part is the only part that will be presented to the Read Model eventually. The `metadata` part is the only Write Model context.
+        data: {
+          eventData: data,
+          eventMeta: {
+            tenantId,
+            generatorId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
     updateGenerator: (
       command: UpdateGenerator,
       state: CreatedGenerator | UpdatedGenerator,
     ): GeneratorUpdated => {
-      const { data } = command;
+      const { data: rawData } = command;
+      const { tenantId, generatorId, ...data } = rawData;
+
+      // Some business rules here. We may want to have a logic to filter only the fields that are changed. Then log it.
       const currentName = state.data.name;
-      const { name: newName } = data;
-      // ... There will be more business rules here.
+      const { name: newName } = rawData;
       if (newName) {
-        // TODO: Do we need to detect what properties are changed here?
         console.log(`Changing name from ${currentName} to ${newName}`);
       }
       return {
         type: "GeneratorUpdated",
-        data,
-        metadata: buildMessageMetadataFromContext(),
+        data: {
+          eventData: data,
+          eventMeta: {
+            tenantId,
+            generatorId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
     deleteGenerator: (command: DeleteGenerator): GeneratorDeleted => {
@@ -144,8 +161,15 @@ function createDecide(getContext: () => AppContext) {
       if (!generatorId) throw new IllegalStateError("ID Expected");
       return {
         type: "GeneratorDeleted",
-        data: { generatorId, tenantId },
-        metadata: buildMessageMetadataFromContext(),
+        data: {
+          eventData: null,
+          eventMeta: {
+            tenantId,
+            generatorId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
   };
@@ -196,22 +220,21 @@ function createEvolve() {
       case "GeneratorCreated": {
         const nextState: DomainState = {
           status: "created",
-          data, // "GeneratorCreated" must be the first event. So it does not need to care about the previous state.
+          data: data.eventData, // "GeneratorCreated" must be the first event. So it does not need to care about the previous state.
         };
         return nextState;
       }
       case "GeneratorUpdated": {
         const nextState: DomainState = {
           status: "updated",
-          data: { ...(state.data || {}), ...data },
+          data: { ...(state.data || {}), ...data.eventData },
         };
         return nextState;
       }
       case "GeneratorDeleted": {
-        const { generatorId } = data;
         const nextState: DomainState = {
           status: "deleted",
-          data: { generatorId },
+          data: null,
         };
         return nextState;
       }
@@ -252,15 +275,15 @@ type InitGenerator = {
 };
 type CreatedGenerator = {
   status: "created";
-  data: GeneratorEntity;
+  data: Omit<GeneratorEntity, "tenantId" | "generatorId">;
 };
 type UpdatedGenerator = {
   status: "updated";
-  data: GeneratorEntity;
+  data: Omit<GeneratorEntity, "tenantId" | "generatorId">;
 };
 type DeletedGenerator = {
   status: "deleted";
-  data: GeneratorIdOnly;
+  data: null;
 };
 type DomainState =
   | CreatedGenerator
@@ -279,24 +302,30 @@ type DomainState =
  * - Generator deleted with the given id.
  * ================================================
  */
-type EventMetadata = {
+type GeneratorEventMeta = Pick<GeneratorEntity, "tenantId" | "generatorId"> & {
   createdBy: string;
+  version: number;
 };
-type GeneratorCreated = Event<
-  "GeneratorCreated",
-  GeneratorEntity,
-  EventMetadata
->;
-type GeneratorUpdated = Event<
-  "GeneratorUpdated",
-  GeneratorEntity,
-  EventMetadata
->;
-type GeneratorDeleted = Event<
-  "GeneratorDeleted",
-  GeneratorIdOnly & { tenantId: string },
-  EventMetadata
->;
+
+/**
+ * These types are used when creating the event, as well as the read model.
+ */
+export type GeneratorCreatedData = {
+  eventMeta: GeneratorEventMeta;
+  eventData: Omit<GeneratorEntity, "tenantId" | "generatorId">;
+};
+export type GeneratorUpdatedData = {
+  eventMeta: GeneratorEventMeta;
+  eventData: Omit<GeneratorEntity, "tenantId" | "generatorId">;
+};
+export type GeneratorDeletedData = {
+  eventMeta: GeneratorEventMeta;
+  eventData: null;
+};
+
+type GeneratorCreated = Event<"GeneratorCreated", GeneratorCreatedData>;
+type GeneratorUpdated = Event<"GeneratorUpdated", GeneratorUpdatedData>;
+type GeneratorDeleted = Event<"GeneratorDeleted", GeneratorDeletedData>;
 type DomainEvent = GeneratorCreated | GeneratorUpdated | GeneratorDeleted;
 
 /**

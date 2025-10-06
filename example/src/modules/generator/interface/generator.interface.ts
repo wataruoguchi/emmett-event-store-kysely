@@ -90,12 +90,18 @@ function createGeneratorApp({
       const result = await generatorService.create({ ...data, tenantId });
       logger.info({ result: createLogBody(result) }, "createGenerator");
       // TODO: Schedule projection for this stream without blocking the response. e.g., using worker
+      const [newEvent] = result?.newEvents ?? [];
+      if (!newEvent) {
+        throw new Error("No new event found. Something went wrong. 500");
+      }
+      const { generatorId } = newEvent.data.eventMeta;
+      if (!generatorId) {
+        throw new Error("Generator ID not found. Something went wrong. 500");
+      }
       return c.json(
         {
           message: "Created!",
-          ...(result?.newState?.data && {
-            generatorId: result?.newState?.data?.generatorId,
-          }),
+          generatorId,
         },
         201,
       );
