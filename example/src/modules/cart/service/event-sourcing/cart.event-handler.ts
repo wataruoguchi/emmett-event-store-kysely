@@ -41,7 +41,7 @@ export function cartEventHandler({
       handler(
         eventStore,
         cartId,
-        { type: "AddItemToCart", data },
+        { type: "AddItemToCart", data: { ...data, cartId } },
         { partition: data.tenantId, streamType: "cart" },
       ),
     removeItem: (
@@ -51,14 +51,14 @@ export function cartEventHandler({
       handler(
         eventStore,
         cartId,
-        { type: "RemoveItemFromCart", data },
+        { type: "RemoveItemFromCart", data: { ...data, cartId } },
         { partition: data.tenantId, streamType: "cart" },
       ),
     empty: (cartId: string, data: { tenantId: string }) =>
       handler(
         eventStore,
         cartId,
-        { type: "CartEmptied", data },
+        { type: "CartEmptied", data: { ...data, cartId } },
         { partition: data.tenantId, streamType: "cart" },
       ),
     checkout: (
@@ -68,19 +68,18 @@ export function cartEventHandler({
       handler(
         eventStore,
         cartId,
-        { type: "CartCheckedOut", data },
+        { type: "CartCheckedOut", data: { ...data, cartId } },
         { partition: data.tenantId, streamType: "cart" },
       ),
     cancel: (cartId: string, data: { tenantId: string; reason: string }) =>
       handler(
         eventStore,
         cartId,
-        { type: "CartCancelled", data },
+        { type: "CartCancelled", data: { ...data, cartId } },
         { partition: data.tenantId, streamType: "cart" },
       ),
   };
 }
-
 export type CartEventHandler = ReturnType<typeof cartEventHandler>;
 
 function createDecide(getContext: () => AppContext) {
@@ -106,28 +105,43 @@ function createDecide(getContext: () => AppContext) {
 
   const handlers = {
     createCart: (command: CreateCart): CartCreated => {
-      const { data } = command;
+      const { data: rawData } = command;
       return {
         type: "CartCreated",
-        data,
-        metadata: buildMessageMetadataFromContext(),
+        data: {
+          eventData: { currency: rawData.currency },
+          eventMeta: {
+            tenantId: rawData.tenantId,
+            cartId: rawData.cartId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
     addItem: (command: AddItemToCart, _state: ActiveCart): ItemAddedToCart => {
-      const { item } = command.data;
+      const { data: rawData } = command;
+      const { item, tenantId, cartId } = rawData;
       if (item.quantity <= 0)
         throw new IllegalStateError("Quantity must be positive");
       return {
         type: "ItemAddedToCart",
-        data: { ...command.data },
-        metadata: buildMessageMetadataFromContext(),
+        data: {
+          eventData: { item },
+          eventMeta: {
+            tenantId,
+            cartId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
     removeItem: (
       command: RemoveItemFromCart,
       state: ActiveCart,
     ): ItemRemovedFromCart => {
-      const { sku, quantity } = command.data;
+      const { sku, quantity, tenantId, cartId } = command.data;
       if (quantity <= 0)
         throw new IllegalStateError("Quantity must be positive");
       const currentQty = state.items.find((i) => i.sku === sku)?.quantity ?? 0;
@@ -136,32 +150,66 @@ function createDecide(getContext: () => AppContext) {
         throw new IllegalStateError("Cannot remove more than in cart");
       return {
         type: "ItemRemovedFromCart",
-        data: { ...command.data },
-        metadata: buildMessageMetadataFromContext(),
+        data: {
+          eventData: { sku, quantity },
+          eventMeta: {
+            tenantId,
+            cartId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
-    emptyCart: (command: CartEmptiedCmd): CartEmptied => ({
-      type: "CartEmptied",
-      data: command.data,
-      metadata: buildMessageMetadataFromContext(),
-    }),
+    emptyCart: (command: CartEmptiedCmd): CartEmptied => {
+      const { tenantId, cartId } = command.data;
+      return {
+        type: "CartEmptied",
+        data: {
+          eventData: null,
+          eventMeta: {
+            tenantId,
+            cartId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
+      };
+    },
     checkoutCart: (
       command: CartCheckedOutCmd,
       _state: ActiveCart,
     ): CartCheckedOut => {
-      const { total } = command.data;
+      const { total, orderId, tenantId, cartId } = command.data;
       if (total < 0) throw new IllegalStateError("Total cannot be negative");
       return {
         type: "CartCheckedOut",
-        data: command.data,
-        metadata: buildMessageMetadataFromContext(),
+        data: {
+          eventData: { orderId, total },
+          eventMeta: {
+            tenantId,
+            cartId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
       };
     },
-    cancelCart: (command: CartCancelledCmd): CartCancelled => ({
-      type: "CartCancelled",
-      data: command.data,
-      metadata: buildMessageMetadataFromContext(),
-    }),
+    cancelCart: (command: CartCancelledCmd): CartCancelled => {
+      const { reason, tenantId, cartId } = command.data;
+      return {
+        type: "CartCancelled",
+        data: {
+          eventData: { reason },
+          eventMeta: {
+            tenantId,
+            cartId,
+            ...buildMessageMetadataFromContext(),
+            version: 1,
+          },
+        },
+      };
+    },
   };
 
   return function decide(
@@ -205,14 +253,17 @@ function createEvolve() {
   return function evolve(state: DomainState, event: DomainEvent): DomainState {
     switch (event.type) {
       case "CartCreated": {
-        const data = event.data as Pick<
-          CartEntity,
-          "tenantId" | "cartId" | "currency"
-        >;
-        return { status: "active", items: [], ...data } satisfies ActiveCart;
+        const data = event.data as CartCreatedData;
+        return {
+          status: "active",
+          items: [],
+          tenantId: data.eventMeta.tenantId,
+          cartId: data.eventMeta.cartId,
+          currency: data.eventData.currency,
+        } satisfies ActiveCart;
       }
       case "ItemAddedToCart": {
-        const { item } = event.data as { tenantId: string; item: CartItem };
+        const { item } = event.data.eventData;
         const existing = (state.items ?? []).find((i) => i.sku === item.sku);
         const items = existing
           ? state.items.map((i) =>
@@ -224,11 +275,7 @@ function createEvolve() {
         return { ...(state as ActiveCart), items } satisfies ActiveCart;
       }
       case "ItemRemovedFromCart": {
-        const { sku, quantity } = event.data as {
-          tenantId: string;
-          sku: string;
-          quantity: number;
-        };
+        const { sku, quantity } = event.data.eventData;
         const items = (state.items ?? [])
           .map((i) =>
             i.sku === sku ? { ...i, quantity: i.quantity - quantity } : i,
@@ -275,35 +322,46 @@ type CancelledCart = BaseCartState & { status: "cancelled" };
 type DomainState = InitCart | ActiveCart | CheckedOutCart | CancelledCart;
 
 // Event metadata
-type EventMetadata = { createdBy: string };
+type CartEventMeta = Pick<CartEntity, "tenantId" | "cartId"> & {
+  createdBy: string;
+  version: number;
+};
+
+export type CartCreatedData = {
+  eventMeta: CartEventMeta;
+  eventData: Pick<CartEntity, "currency">;
+};
+export type ItemAddedToCartData = {
+  eventMeta: CartEventMeta;
+  eventData: { item: CartItem };
+};
+export type ItemRemovedFromCartData = {
+  eventMeta: CartEventMeta;
+  eventData: { sku: string; quantity: number };
+};
+export type CartEmptiedData = {
+  eventMeta: CartEventMeta;
+  eventData: null;
+};
+export type CartCheckedOutData = {
+  eventMeta: CartEventMeta;
+  eventData: { orderId: string; total: number };
+};
+export type CartCancelledData = {
+  eventMeta: CartEventMeta;
+  eventData: { reason: string };
+};
 
 // Events
-type CartCreated = Event<
-  "CartCreated",
-  Pick<CartEntity, "tenantId" | "cartId" | "currency">,
-  EventMetadata
->;
-type ItemAddedToCart = Event<
-  "ItemAddedToCart",
-  { tenantId: string; item: CartItem },
-  EventMetadata
->;
+type CartCreated = Event<"CartCreated", CartCreatedData>;
+type ItemAddedToCart = Event<"ItemAddedToCart", ItemAddedToCartData>;
 type ItemRemovedFromCart = Event<
   "ItemRemovedFromCart",
-  { tenantId: string; sku: string; quantity: number },
-  EventMetadata
+  ItemRemovedFromCartData
 >;
-type CartEmptied = Event<"CartEmptied", { tenantId: string }, EventMetadata>;
-type CartCheckedOut = Event<
-  "CartCheckedOut",
-  { tenantId: string; orderId: string; total: number },
-  EventMetadata
->;
-type CartCancelled = Event<
-  "CartCancelled",
-  { tenantId: string; reason: string },
-  EventMetadata
->;
+type CartEmptied = Event<"CartEmptied", CartEmptiedData>;
+type CartCheckedOut = Event<"CartCheckedOut", CartCheckedOutData>;
+type CartCancelled = Event<"CartCancelled", CartCancelledData>;
 type DomainEvent =
   | CartCreated
   | ItemAddedToCart
@@ -319,20 +377,23 @@ type CreateCart = Command<
 >;
 type AddItemToCart = Command<
   "AddItemToCart",
-  { tenantId: string; item: CartItem }
+  { tenantId: string; cartId: string; item: CartItem }
 >;
 type RemoveItemFromCart = Command<
   "RemoveItemFromCart",
-  { tenantId: string; sku: string; quantity: number }
+  { tenantId: string; cartId: string; sku: string; quantity: number }
 >;
-type CartEmptiedCmd = Command<"CartEmptied", { tenantId: string }>;
+type CartEmptiedCmd = Command<
+  "CartEmptied",
+  { tenantId: string; cartId: string }
+>;
 type CartCheckedOutCmd = Command<
   "CartCheckedOut",
-  { tenantId: string; orderId: string; total: number }
+  { tenantId: string; cartId: string; orderId: string; total: number }
 >;
 type CartCancelledCmd = Command<
   "CartCancelled",
-  { tenantId: string; reason: string }
+  { tenantId: string; cartId: string; reason: string }
 >;
 type DomainCommand =
   | CreateCart

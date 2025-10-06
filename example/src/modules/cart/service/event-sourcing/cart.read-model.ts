@@ -3,6 +3,12 @@ import type {
   ProjectionRegistry,
 } from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { DatabaseExecutor } from "../../../shared/infra/db.js";
+import type {
+  CartCheckedOutData,
+  CartCreatedData,
+  ItemAddedToCartData,
+  ItemRemovedFromCartData,
+} from "./cart.event-handler.js";
 
 type CartReadItem = {
   sku: string;
@@ -27,18 +33,6 @@ function parseItemsJson(raw: unknown): CartReadItem[] {
   return [] as CartReadItem[];
 }
 
-type CartEventData = {
-  tenantId: string;
-  cartId: string;
-  currency?: string;
-  item?: { sku: string; name: string; unitPrice: number; quantity: number };
-  sku?: string;
-  quantity?: number;
-  orderId?: string;
-  total?: number;
-  reason?: string;
-};
-
 async function upsertIfNewer(
   db: DatabaseExecutor,
   event: ProjectionEvent,
@@ -62,14 +56,14 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
   return {
     CartCreated: [
       async ({ db, partition }, event) => {
-        const data = event.data as CartEventData;
+        const data = event.data as CartCreatedData;
         await upsertIfNewer(db, event, async (q) => {
           await q
             .insertInto("carts")
             .values({
-              tenant_id: data.tenantId,
-              cart_id: data.cartId,
-              currency: data.currency ?? "USD",
+              tenant_id: data.eventMeta.tenantId,
+              cart_id: data.eventMeta.cartId,
+              currency: data.eventData.currency ?? "USD",
               is_checked_out: false,
               is_cancelled: false,
               items_json: JSON.stringify([]),
@@ -96,7 +90,7 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
     ],
     ItemAddedToCart: [
       async ({ db, partition }, event) => {
-        const data = event.data as CartEventData;
+        const data = event.data as ItemAddedToCartData;
         await upsertIfNewer(db, event, async (q) => {
           const row = await q
             .selectFrom("carts")
@@ -105,9 +99,11 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
             .where("partition", "=", partition)
             .executeTakeFirst();
           const items: CartReadItem[] = parseItemsJson(row?.items_json);
-          const existing = items.find((i) => i.sku === data.item?.sku);
-          if (existing) existing.quantity += data.item?.quantity ?? 0;
-          else if (data.item) items.push(data.item);
+          const existing = items.find(
+            (i) => i.sku === data.eventData.item?.sku,
+          );
+          if (existing) existing.quantity += data.eventData.item?.quantity ?? 0;
+          else if (data.eventData.item) items.push(data.eventData.item);
 
           await q
             .updateTable("carts")
@@ -124,7 +120,7 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
     ],
     ItemRemovedFromCart: [
       async ({ db, partition }, event) => {
-        const data = event.data as CartEventData;
+        const data = event.data as ItemRemovedFromCartData;
         await upsertIfNewer(db, event, async (q) => {
           const row = await q
             .selectFrom("carts")
@@ -135,8 +131,11 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
           let items: CartReadItem[] = parseItemsJson(row?.items_json);
           items = items
             .map((i) =>
-              i.sku === data.sku
-                ? { ...i, quantity: i.quantity - (data.quantity ?? 0) }
+              i.sku === data.eventData.sku
+                ? {
+                    ...i,
+                    quantity: i.quantity - (data.eventData.quantity ?? 0),
+                  }
                 : i,
             )
             .filter((i) => i.quantity > 0);
@@ -172,6 +171,7 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
     ],
     CartCheckedOut: [
       async ({ db, partition }, event) => {
+        const data = event.data as CartCheckedOutData;
         await upsertIfNewer(db, event, async (q) => {
           const row = await q
             .selectFrom("carts")
@@ -182,8 +182,7 @@ export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
 
           const items: CartReadItem[] = parseItemsJson(row?.items_json);
 
-          const { orderId, total } =
-            (event.data as { orderId?: string; total?: number }) ?? {};
+          const { orderId, total } = data.eventData;
 
           await q
             .updateTable("carts")
