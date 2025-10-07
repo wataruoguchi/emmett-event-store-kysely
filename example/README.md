@@ -1,5 +1,129 @@
 # Event Sourcing Project Example
 
+## Event Sourcing with Emmett
+
+[Emmett](https://event-driven-io.github.io/emmett/) is a library that helps developing an event sourced system.
+
+## Event Sourcing Database Schema
+
+The following are the tables used for building Event Sourcing module.
+
+### Streams table
+
+| Column          | Type    | Nullable | Default          | Notes               |
+| --------------- | ------- | -------- | ---------------- | ------------------- |
+| stream_id       | TEXT    | NO       |                  |                     |
+| stream_position | BIGINT  | NO       |                  |                     |
+| partition       | TEXT    | NO       | '${customer_id}' | Partition key value |
+| stream_type     | TEXT    | NO       |                  |                     |
+| stream_metadata | JSONB   | NO       |                  |                     |
+| is_archived     | BOOLEAN | NO       | FALSE            |                     |
+
+- Primary key: `(stream_id, partition, is_archived)`
+- Partitioning: `PARTITION BY LIST (partition)`
+- Indexes: Unique index on `(stream_id, partition, is_archived)` including `stream_position`
+
+### Messages table
+
+| Column                 | Type        | Nullable | Default                                | Notes                 |
+| ---------------------- | ----------- | -------- | -------------------------------------- | --------------------- |
+| stream_id              | TEXT        | NO       |                                        |                       |
+| stream_position        | BIGINT      | NO       |                                        |                       |
+| partition              | TEXT        | NO       | '${customer_id}'                       | Partition key value   |
+| message_kind           | CHAR(1)     | NO       | 'E'                                    |                       |
+| message_data           | JSONB       | NO       |                                        |                       |
+| message_metadata       | JSONB       | NO       |                                        |                       |
+| message_schema_version | TEXT        | NO       |                                        |                       |
+| message_type           | TEXT        | NO       |                                        |                       |
+| message_id             | TEXT        | NO       |                                        |                       |
+| is_archived            | BOOLEAN     | NO       | FALSE                                  |                       |
+| global_position        | BIGINT      | YES      | nextval('emt_global_message_position') | Monotonic sequence    |
+| transaction_id         | XID8        | NO       |                                        | PostgreSQL 64-bit XID |
+| created                | TIMESTAMPTZ | NO       | now()                                  |                       |
+
+- Primary key: `(stream_id, stream_position, partition, is_archived)`
+- Partitioning: `PARTITION BY LIST (partition)`
+- Sequences: `emt_global_message_position` (used by `global_position`)
+
+### Subscriptions table
+
+| Column                        | Type   | Nullable | Default          | Notes                 |
+| ----------------------------- | ------ | -------- | ---------------- | --------------------- |
+| subscription_id               | TEXT   | NO       |                  |                       |
+| version                       | INT    | NO       | 1                | Part of PK            |
+| partition                     | TEXT   | NO       | '${customer_id}' | Partition key value   |
+| last_processed_position       | BIGINT | NO       |                  |                       |
+| last_processed_transaction_id | XID8   | NO       |                  | PostgreSQL 64-bit XID |
+
+- Primary key: `(subscription_id, partition, version)`
+- Partitioning: `PARTITION BY LIST (partition)`
+
+## Event Sourcing (writes)
+
+The tables above implement Emmett's event store for PostgreSQL. See the Emmett documentation for an overview: [Emmett overview](https://event-driven-io.github.io/emmett/overview.html).
+
+### How writes work (commands → events)
+
+- A command handler decides on changes and records them as immutable events.
+- Events are appended to a stream identified by `stream_id`.
+- Each append increments `stream_position` within that stream. This enables optimistic concurrency checks (compare expected position before writing).
+- A row in `messages` is written per event.
+- `global_position` is assigned from a sequence to provide a monotonic, cross-stream ordering for consumers.
+- The `streams` table tracks the stream's type, latest position and metadata for quick access and listing.
+
+### Partitions and archiving
+
+- `partition` is a logical partition key. It is used for multi-tenancy.
+- Both `streams` and `messages` include `is_archived`. Archiving allows hiding historical streams/messages without deleting rows and is part of the primary key, preserving history.
+
+### Diagrams (writes)
+
+#### Stream append with optimistic concurrency
+
+```mermaid
+sequenceDiagram
+    participant C as "Command Handler"
+    participant ES as "Event Store"
+    participant DB as PostgreSQL
+
+    Note over C: Decide events, set expectedPosition = n
+    C->>ES: Append(stream_id, events, expectedPosition)
+    ES->>DB: SELECT max(stream_position) FROM messages WHERE stream_id=...
+    alt Position matches
+        ES->>DB: INSERT INTO messages
+        ES->>DB: UPDATE streams
+        ES-->>C: Append OK (new stream_position, global_position)
+    else Conflict
+        ES-->>C: VersionConflictError
+    end
+```
+
+## Event Sourcing (reads)
+
+### How reads and projections work (subscriptions)
+
+- Projections/read models consume events in `messages`, typically by increasing `global_position`.
+- Each projection keeps its cursor in `subscriptions` as `last_processed_position` (and `last_processed_transaction_id`) so it can resume after restarts.
+- Processing flow:
+  1. Load next batch of events where `global_position` > `last_processed_position`.
+  2. Apply events to your read model store (e.g., PostgreSQL tables, Elasticsearch, caches).
+  3. Update the corresponding row in `subscriptions` to the last successfully processed position.
+- Using the position bookmark ensures at-least-once processing with idempotent projections. The transaction id helps detect boundary cases around transaction visibility.
+
+### Diagrams (reads)
+
+#### Projection subscription loop
+
+```mermaid
+flowchart TD
+    Start([Start]) --> Init[Read subscriptions row]
+    Init --> Read[Fetch events]
+    Read --> Apply[Apply to read model]
+    Apply --> Bookmark[Update subscriptions]
+    Bookmark --> Wait[Wait for new events]
+    Wait --> Read
+```
+
 ## Shopping Cart Example
 
 This example demonstrates an event-sourced shopping cart implementation using the Emmett framework. The cart follows CQRS and Event Sourcing patterns with clear separation between commands, events, and domain states.
