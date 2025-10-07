@@ -23,6 +23,7 @@ describe("Generator Integration", () => {
   const TEST_DB_NAME = "generator_e2e_test";
   const logger = {
     info: vi.fn(),
+    // info: console.log, // Debugging
     error: vi.fn(),
   } as unknown as Logger;
 
