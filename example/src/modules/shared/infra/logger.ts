@@ -1,4 +1,3 @@
-import { Context } from "effect";
 import { pino } from "pino";
 
 export type Logger = typeof logger;
@@ -23,8 +22,3 @@ export const logger = pino({
         level: "debug",
       }),
 });
-
-export class LoggerService extends Context.Tag("LoggerService")<
-  LoggerService,
-  Logger
->() {}

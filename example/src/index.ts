@@ -1,10 +1,16 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { createCartApp } from "./modules/cart/cart.index.js";
-import { createGeneratorApp } from "./modules/generator/generator.index.js";
+import {
+  createGeneratorApp,
+  createGeneratorService,
+} from "./modules/generator/generator.index.js";
 import { getDb } from "./modules/shared/infra/db.js";
 import { logger } from "./modules/shared/infra/logger.js";
-import { createTenantApp } from "./modules/tenant/tenant.index.js";
+import {
+  createTenantApp,
+  createTenantService,
+} from "./modules/tenant/tenant.index.js";
+import { createCartApp, createCartService } from "./modules/cart/cart.index.js";
 
 const app = new Hono();
 const db = getDb();
@@ -13,20 +19,33 @@ app.get("/", (c) => {
   return c.text("Hello Hono!");
 });
 
+const tenantService = createTenantService({ db, logger });
 /**
  * Tenant module starts here
  */
-app.route("", createTenantApp({ db, logger }));
+app.route("", createTenantApp({ tenantService, logger }));
 
 /**
  * Generator module starts here
  */
-app.route("", createGeneratorApp({ db, logger }));
+app.route(
+  "",
+  createGeneratorApp({
+    generatorService: createGeneratorService({ tenantService }, { db, logger }),
+    logger,
+  }),
+);
 
 /**
  * Cart module starts here
  */
-app.route("", createCartApp({ db, logger }));
+app.route(
+  "",
+  createCartApp({
+    cartService: createCartService({ tenantService }, { db, logger }),
+    logger,
+  }),
+);
 
 serve(
   {
