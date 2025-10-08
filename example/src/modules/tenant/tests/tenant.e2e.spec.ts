@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantApp } from "../tenant.index.js";
+import { createTenantApp, createTenantService } from "../tenant.index.js";
 
 describe("Tenant Integration", () => {
   const TEST_DB_NAME = "tenant_e2e_test";
@@ -16,7 +16,10 @@ describe("Tenant Integration", () => {
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createTenantApp({ db, logger });
+    app = createTenantApp({
+      tenantService: createTenantService({ db, logger }),
+      logger,
+    });
   });
 
   afterAll(async () => {

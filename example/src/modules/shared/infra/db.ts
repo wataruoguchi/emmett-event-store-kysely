@@ -1,4 +1,3 @@
-import { Context } from "effect";
 import { Kysely, PostgresDialect } from "kysely";
 import type { DB as DBType } from "kysely-codegen";
 import { Pool } from "pg";
@@ -31,8 +30,3 @@ export async function dbQuery<A>(run: () => Promise<A>, errorMessage: string) {
     throw new DatabaseError({ message: errorMessage, cause: error });
   }
 }
-
-export class DatabaseService extends Context.Tag("DatabaseService")<
-  DatabaseService,
-  DatabaseExecutor
->() {}

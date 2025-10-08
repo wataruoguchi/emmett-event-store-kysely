@@ -1,277 +1,164 @@
 import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
-import { Effect, Layer, Schema } from "effect";
 import { Hono } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   createContextMiddleware,
   getContext,
 } from "../../shared/hono/context-middleware.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
-import { DatabaseService } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { LoggerService } from "../../shared/infra/logger.js";
-import { GeneratorEntitySchema } from "../domain/generator.entity.js";
-import { GeneratorNotFoundError } from "../errors.js";
-import {
-  DatabaseError,
-  GeneratorRepositoryLayer,
-} from "../repository/generator.repo.js";
+import type { TenantService } from "../../tenant/tenant.index.js";
+import { createGeneratorRepository } from "../repository/generator.repo.js";
 import { generatorEventHandler } from "../service/event-sourcing/generator.event-handler.js";
 import {
-  GeneratorService,
-  GeneratorServiceLayer,
+  createGeneratorServiceFactory,
+  type GeneratorService,
 } from "../service/generator.service.js";
 
-// Infrastructure layer for dependencies
-const createInfrastructureLayer = (db: DatabaseExecutor, logger: Logger) =>
-  Layer.mergeAll(
-    Layer.succeed(DatabaseService, db),
-    Layer.succeed(LoggerService, logger),
-  );
+/**
+ * Like index.ts, this file is the entry point for the generator module.
+ */
+export function createGeneratorService(
+  { tenantService }: { tenantService: TenantService },
+  { db, logger }: { db: DatabaseExecutor; logger: Logger },
+): GeneratorService {
+  const eventStore = createEventStore({ db, logger });
+
+  return createGeneratorServiceFactory({
+    repository: createGeneratorRepository({ db, logger }),
+    findTenantByIdService: tenantService.get,
+    handler: generatorEventHandler({
+      eventStore,
+      getContext,
+    }),
+  });
+}
 
 /**
- * Create a generator app using Effect Layer system with event sourcing.
+ * Create a generator app. This function has all the HTTP logic for the generator app.
  */
-export function createGeneratorApp({
-  db,
+function createGeneratorApp({
+  generatorService,
   logger,
 }: {
-  db: DatabaseExecutor;
+  generatorService: GeneratorService;
   logger: Logger;
 }) {
   const app = new Hono();
-
-  // Create event store
-  const eventStore = createEventStore({ db, logger });
-
-  // Create the complete layer
-  const AppLayer = Layer.mergeAll(
-    createInfrastructureLayer(db, logger),
-    GeneratorRepositoryLayer,
-    GeneratorServiceLayer(eventStore), // Pass eventStore to GeneratorServiceLayer
-  );
-
   app.use(createContextMiddleware());
-
   app.get("/api/tenants/:tenantId/generators", async (c) => {
     const tenantId = c.req.param("tenantId");
 
-    const program = Effect.gen(function* () {
-      const generatorService = yield* GeneratorService;
-      return yield* generatorService.getAll({ tenantId });
-    });
-
-    const result = await Effect.runPromise(
-      program.pipe(
-        Effect.provide(AppLayer),
-        Effect.catchAll(
-          (
-            error,
-          ): Effect.Effect<{ error: string; status: ContentfulStatusCode }> => {
-            if (error instanceof DatabaseError) {
-              return Effect.succeed({ error: "Database error", status: 500 });
-            }
-            return Effect.succeed({
-              error: "Internal server error",
-              status: 500,
-            });
-          },
-        ),
-      ),
-    );
-
-    if ("error" in result) {
-      return c.json({ message: result.error }, result.status);
+    try {
+      logger.info({ tenantId }, "getAllGenerators");
+      const result = await generatorService.getAll({ tenantId });
+      return c.json(result);
+    } catch (error) {
+      logger.error({ error }, "getAllGenerators");
+      return c.json(
+        {
+          message: "Ugh!",
+        },
+        400,
+      );
     }
-
-    return c.json(
-      result.map((generator) => ({
-        tenant_id: generator.tenantId,
-        generator_id: generator.generatorId,
-        name: generator.name,
-        address: generator.address,
-        generator_type: generator.generatorType,
-        notes: generator.notes,
-        is_deleted: generator.isDeleted ?? false,
-      })),
-    );
   });
 
   app.get("/api/tenants/:tenantId/generators/:id", async (c) => {
     const tenantId = c.req.param("tenantId");
     const id = c.req.param("id");
-
-    const program = Effect.gen(function* () {
-      const generatorService = yield* GeneratorService;
-      return yield* generatorService.get({ tenantId, generatorId: id });
-    });
-
-    const result = await Effect.runPromise(
-      program.pipe(
-        Effect.provide(AppLayer),
-        Effect.catchAll(
-          (
-            error,
-          ): Effect.Effect<{ error: string; status: ContentfulStatusCode }> => {
-            if (error instanceof GeneratorNotFoundError) {
-              return Effect.succeed({
-                error: "Generator not found",
-                status: 404,
-              });
-            }
-            if (error instanceof DatabaseError) {
-              return Effect.succeed({ error: "Database error", status: 500 });
-            }
-            return Effect.succeed({
-              error: "Internal server error",
-              status: 500,
-            });
-          },
-        ),
-      ),
-    );
-
-    if ("error" in result) {
-      return c.json({ message: result.error }, result.status);
+    logger.info({ tenantId, id }, "getGeneratorById");
+    try {
+      const result = await generatorService.get({ tenantId, generatorId: id });
+      return c.json(result);
+    } catch (error) {
+      logger.error({ error }, "getGeneratorById");
+      return c.json(
+        {
+          message: "Ugh!",
+        },
+        400,
+      );
     }
-
-    return c.json({
-      tenant_id: result.tenantId,
-      generator_id: result.generatorId,
-      name: result.name,
-      address: result.address,
-      generator_type: result.generatorType,
-      notes: result.notes,
-      is_deleted: result.isDeleted ?? false,
-    });
   });
 
   app.post("/api/tenants/:tenantId/generators", async (c) => {
     const tenantId = c.req.param("tenantId");
-    const rawData = await c.req.json();
-    const generatorId = crypto.randomUUID();
+    const data = await c.req.json();
+    logger.info({ tenantId, data }, "createGenerator");
 
-    // Validate POST body with Effect Schema
-    const program = Effect.gen(function* () {
-      const validatedData = yield* Schema.decodeUnknown(GeneratorEntitySchema)({
-        ...rawData,
-        generatorId,
-        tenantId,
-      }).pipe(
-        Effect.mapError(
-          (error) => new Error(`Invalid generator data: ${error}`),
-        ),
+    try {
+      const result = await generatorService.create({ ...data, tenantId });
+      logger.info({ result: createLogBody(result) }, "createGenerator");
+      // TODO: Schedule projection for this stream without blocking the response. e.g., using worker
+      const [newEvent] = result?.newEvents ?? [];
+      if (!newEvent) {
+        throw new Error("No new event found. Something went wrong. 500");
+      }
+      const { generatorId } = newEvent.data.eventMeta;
+      if (!generatorId) {
+        throw new Error("Generator ID not found. Something went wrong. 500");
+      }
+      return c.json(
+        {
+          message: "Created!",
+          generatorId,
+        },
+        201,
       );
-
-      // Use event handler for generator creation
-      return yield* Effect.tryPromise({
-        try: () =>
-          generatorEventHandler({ eventStore, getContext }).create(
-            generatorId,
-            validatedData,
-          ),
-        catch: (error) => new Error(`Failed to create generator: ${error}`),
-      });
-    });
-
-    const result = await Effect.runPromise(
-      program.pipe(
-        Effect.catchAll(
-          (
-            error,
-          ): Effect.Effect<{ error: string; status: ContentfulStatusCode }> =>
-            Effect.succeed({ error: error.message, status: 400 }),
-        ),
-      ),
-    );
-
-    if (!!result && "error" in result) {
-      return c.json({ message: result.error }, result.status);
+    } catch (error) {
+      logger.error({ error }, "createGenerator");
+      return c.json(
+        {
+          message: "Ugh!",
+        },
+        400,
+      );
     }
-
-    return c.json({ message: "Created!", generator_id: generatorId }, 201);
   });
 
   app.put("/api/tenants/:tenantId/generators/:id", async (c) => {
     const tenantId = c.req.param("tenantId");
     const id = c.req.param("id");
-    const rawData = await c.req.json();
+    const { isDeleted, ...data } = (await c.req.json()) as {
+      isDeleted: boolean;
+      data: unknown;
+    };
+    logger.info({ tenantId, id, data }, "updateGenerator");
 
-    const GeneratorUpdateSchema = Schema.Struct({
-      isDeleted: Schema.optional(Schema.Boolean),
-      name: Schema.optional(Schema.String),
-      address: Schema.optional(Schema.String),
-      generatorType: Schema.optional(Schema.String),
-      notes: Schema.optional(Schema.String),
-    });
-
-    // Validate PUT body with Effect Schema
-    const program = Effect.gen(function* () {
-      const validatedData = yield* Schema.decodeUnknown(GeneratorUpdateSchema)(
-        rawData,
-      ).pipe(
-        Effect.mapError(
-          (error) => new Error(`Invalid generator data: ${error}`),
-        ),
+    try {
+      const result = isDeleted
+        ? await generatorService.delete({ tenantId, generatorId: id })
+        : await generatorService.update({ ...data, tenantId, generatorId: id });
+      logger.info({ result: createLogBody(result) }, "updateGenerator");
+      // TODO: Schedule projection for this stream without blocking the response
+      return c.json(
+        {
+          message: isDeleted ? "Deleted!" : "Updated!",
+        },
+        201,
       );
-
-      if (validatedData.isDeleted) {
-        // Use event handler for generator deletion
-        return yield* Effect.tryPromise({
-          try: () =>
-            generatorEventHandler({ eventStore, getContext }).delete(id, {
-              tenantId,
-              generatorId: id,
-            }),
-          catch: (error) => new Error(`Failed to delete generator: ${error}`),
-        });
-      } else {
-        // Use event handler for generator update - only pass the fields that were provided
-        const updateData = {
-          tenantId,
-          generatorId: id,
-          ...(validatedData.name && { name: validatedData.name }),
-          ...(validatedData.address !== undefined && {
-            address: validatedData.address,
-          }),
-          ...(validatedData.generatorType && {
-            generatorType: validatedData.generatorType,
-          }),
-          ...(validatedData.notes !== undefined && {
-            notes: validatedData.notes,
-          }),
-        };
-
-        return yield* Effect.tryPromise({
-          try: () =>
-            generatorEventHandler({ eventStore, getContext }).update(
-              id,
-              // @ts-expect-error many fields should be optional in the event handler. // TODO: Fix it
-              updateData,
-            ),
-          catch: (error) => new Error(`Failed to update generator: ${error}`),
-        });
-      }
-    });
-
-    const result = await Effect.runPromise(
-      program.pipe(
-        Effect.catchAll(
-          (
-            error,
-          ): Effect.Effect<{ error: string; status: ContentfulStatusCode }> =>
-            Effect.succeed({ error: error.message, status: 400 }),
-        ),
-      ),
-    );
-
-    if ("error" in result) {
-      return c.json({ message: result.error }, result.status);
+    } catch (error) {
+      logger.error({ error }, "updateGenerator");
+      return c.json(
+        {
+          message: "Ugh!",
+        },
+        400,
+      );
     }
-
-    const message = rawData.isDeleted ? "Deleted!" : "Updated!";
-    return c.json({ message }, 201);
   });
-
   return app;
+}
+
+export { createGeneratorApp };
+
+function createLogBody(result: unknown) {
+  if (typeof result !== "object" || result === null) return;
+  if (!("newEvents" in result) || !("newState" in result)) return;
+  const { newEvents, newState, ...rest } = result;
+  return {
+    newEvents: JSON.stringify(newEvents),
+    newState: JSON.stringify(newState),
+    ...rest,
+  };
 }
