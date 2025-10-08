@@ -10,8 +10,7 @@ import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantService } from "../../tenant/tenant.index.js";
-import { createCartApp, createCartService } from "../cart.index.js";
+import { createCartApp } from "../cart.index.js";
 import { cartsProjection } from "../service/event-sourcing/cart.read-model.js";
 
 describe("Cart Integration", () => {
@@ -28,13 +27,7 @@ describe("Cart Integration", () => {
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createCartApp({
-      cartService: createCartService(
-        { tenantService: createTenantService({ db, logger }) },
-        { db, logger },
-      ),
-      logger,
-    });
+    app = createCartApp({ db, logger });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     const { readStream } = createEventStore({ db, logger });
@@ -84,13 +77,12 @@ describe("Cart Integration", () => {
         body: JSON.stringify(generateCartData()),
       });
       const json = await resp.json();
-      cartId = json.cartId;
+      cartId = json.cart_id;
       // ensure stream exists and is visible to read model
       await project();
     });
 
     it("adds an item", async () => {
-      expect(z.uuid().safeParse(cartId).success).toBe(true);
       const response = await app.request(
         `/api/tenants/${tenantId}/carts/${cartId}/items`,
         {
@@ -130,7 +122,7 @@ describe("Cart Integration", () => {
         body: JSON.stringify(generateCartData()),
       });
       const json = await resp.json();
-      cartId = json.cartId;
+      cartId = json.cart_id;
       await app.request(`/api/tenants/${tenantId}/carts/${cartId}/items`, {
         method: "PUT",
         body: JSON.stringify({ action: "add", item: generateItem() }),
@@ -155,7 +147,7 @@ describe("Cart Integration", () => {
         body: JSON.stringify(generateCartData()),
       });
       const json = await resp.json();
-      const anotherCart = json.cartId;
+      const anotherCart = json.cart_id;
       await project();
       const response = await app.request(
         `/api/tenants/${tenantId}/carts/${anotherCart}/cancel`,
@@ -176,7 +168,7 @@ describe("Cart Integration", () => {
         body: JSON.stringify(generateCartData()),
       });
       const json = await resp.json();
-      cartId = json.cartId;
+      cartId = json.cart_id;
       await app.request(`/api/tenants/${tenantId}/carts/${cartId}/items`, {
         method: "PUT",
         body: JSON.stringify({ action: "add", item: generateItem() }),
@@ -204,7 +196,8 @@ describe("Cart Integration", () => {
         method: "POST",
         body: JSON.stringify(generateCartData()),
       });
-      const { cartId } = (await resp.json()) as { cartId: string };
+      const json = await resp.json();
+      const cartId = json.cart_id;
       expect(z.uuid().safeParse(cartId).success).toBe(true);
       await project();
 

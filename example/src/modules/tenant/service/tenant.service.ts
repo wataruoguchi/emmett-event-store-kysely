@@ -1,53 +1,98 @@
-import { TenantEntitySchema } from "../domain/tenant.entity.js";
+import { Context, Effect, Layer, Schema } from "effect";
+import type { DatabaseService } from "../../shared/infra/db.js";
+import type { LoggerService } from "../../shared/infra/logger.js";
+import {
+  TenantEntitySchema,
+  type TenantEntity,
+} from "../domain/tenant.entity.js";
 import { TenantInvalidInputError, TenantNotFoundError } from "../errors.js";
-import type { TenantRepository } from "../repository/tenant.repo.js";
+import {
+  TenantRepositoryLayer,
+  TenantRepositoryService,
+  type DatabaseError,
+} from "../repository/tenant.repo.js";
 
-export type TenantService = ReturnType<typeof createTenantServiceFactory>;
+// Service tag
+export class TenantService extends Context.Tag("TenantService")<
+  TenantService,
+  TenantServiceInterface
+>() {}
 
-type Dependencies = {
-  repository: TenantRepository;
+export type TenantServiceInterface = {
+  get: (
+    tenantId: string,
+  ) => Effect.Effect<
+    TenantEntity,
+    TenantNotFoundError | DatabaseError,
+    DatabaseService | LoggerService | TenantRepositoryService
+  >;
+  getAll: () => Effect.Effect<
+    TenantEntity[],
+    DatabaseError,
+    DatabaseService | LoggerService | TenantRepositoryService
+  >;
+  create: (input: {
+    tenantId: string;
+    name: string;
+  }) => Effect.Effect<
+    TenantEntity,
+    TenantInvalidInputError | DatabaseError,
+    DatabaseService | LoggerService | TenantRepositoryService
+  >;
 };
 
-/**
- * Create a tenant service. This file has all the business logic for the tenant service.
- */
-export function createTenantServiceFactory(deps: Dependencies) {
-  return {
-    get: createFindTenantByIdService(deps),
-    getAll: createFindAllTenantsService(deps),
-    create: createCreateTenantService(deps),
-  };
-}
+// Service implementation
+const createTenantServiceImpl = (): TenantServiceInterface => ({
+  get: (tenantId: string) =>
+    Effect.gen(function* () {
+      const repository = yield* TenantRepositoryService;
 
-function createFindTenantByIdService(deps: Dependencies) {
-  return async (tenantId: string) => {
-    const tenant = await deps.repository.findById(tenantId);
-    if (!tenant) {
-      const tenantByTenantId = await deps.repository.findByTenantId(tenantId);
-      if (!tenantByTenantId) {
-        throw new TenantNotFoundError(`Tenant not found: ${tenantId}`);
+      const tenant = yield* repository.findById(tenantId);
+      if (tenant) {
+        return tenant;
       }
-      return tenantByTenantId;
-    }
-    return tenant;
-  };
-}
 
-function createFindAllTenantsService(deps: Dependencies) {
-  return async () => {
-    return await deps.repository.findAll();
-  };
-}
+      const tenantByTenantId = yield* repository.findByTenantId(tenantId);
+      if (tenantByTenantId) {
+        return tenantByTenantId;
+      }
 
-function createCreateTenantService(deps: Dependencies) {
-  return async (input: { tenantId: string; name: string }) => {
-    if (!input || typeof input !== "object") {
-      throw new TenantInvalidInputError("Input must be an object");
-    }
-    const tenant = TenantEntitySchema.parse({
-      ...input,
-      id: crypto.randomUUID(),
-    });
-    return await deps.repository.create(tenant);
-  };
-}
+      return yield* Effect.fail(
+        new TenantNotFoundError(`Tenant not found: ${tenantId}`),
+      );
+    }),
+
+  getAll: () =>
+    Effect.gen(function* () {
+      const repository = yield* TenantRepositoryService;
+      return yield* repository.findAll();
+    }),
+
+  create: (input: { tenantId: string; name: string }) =>
+    Effect.gen(function* () {
+      if (!input || typeof input !== "object") {
+        return yield* Effect.fail(
+          new TenantInvalidInputError("Input must be an object"),
+        );
+      }
+
+      const tenantData = {
+        ...input,
+        id: crypto.randomUUID(),
+      };
+
+      const tenant =
+        yield* Schema.decodeUnknown(TenantEntitySchema)(tenantData);
+      const repository = yield* TenantRepositoryService;
+
+      return yield* repository.create(tenant);
+    }),
+});
+
+// Layer for the service
+export const TenantServiceLayer = Layer.effect(
+  TenantService,
+  Effect.succeed(createTenantServiceImpl()).pipe(
+    Effect.provide(TenantRepositoryLayer),
+  ),
+);
