@@ -1,0 +1,221 @@
+/**
+ * Example: Using Event Store Consumers for Read Model Projections
+ * 
+ * This demonstrates how to use the integrated consumers to automatically
+ * keep read models up-to-date as events are written to the event store.
+ */
+
+import type { DatabaseExecutor } from "../modules/shared/infra/db.js";
+import type { Logger } from "../modules/shared/infra/logger.js";
+import { createCartsConsumer } from "../modules/cart/service/event-sourcing/cart.read-model.js";
+import { createGeneratorsConsumer } from "../modules/generator/service/event-sourcing/generator.read-model.js";
+
+/**
+ * Example 1: Start a single cart consumer for a specific tenant
+ */
+export async function startCartConsumer({
+  db,
+  logger,
+  tenantId,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+  tenantId: string;
+}) {
+  // Create the consumer for the tenant's partition
+  const consumer = createCartsConsumer({
+    db,
+    logger,
+    partition: tenantId,
+    consumerName: `carts-${tenantId}`,
+    batchSize: 50,
+    pollingInterval: 500, // Poll every 500ms
+  });
+
+  // Start processing events
+  await consumer.start();
+
+  logger.info({ tenantId }, "Cart consumer started");
+
+  // Return the consumer so it can be stopped later
+  return consumer;
+}
+
+/**
+ * Example 2: Start multiple consumers for different tenants
+ */
+export async function startMultiTenantConsumers({
+  db,
+  logger,
+  tenantIds,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+  tenantIds: string[];
+}) {
+  const consumers = [];
+
+  // Start a cart consumer for each tenant
+  for (const tenantId of tenantIds) {
+    const cartConsumer = createCartsConsumer({
+      db,
+      logger,
+      partition: tenantId,
+      consumerName: `carts-${tenantId}`,
+    });
+
+    const generatorConsumer = createGeneratorsConsumer({
+      db,
+      logger,
+      partition: tenantId,
+      consumerName: `generators-${tenantId}`,
+    });
+
+    await cartConsumer.start();
+    await generatorConsumer.start();
+
+    consumers.push({ cartConsumer, generatorConsumer });
+  }
+
+  logger.info(
+    { tenantCount: tenantIds.length },
+    "All tenant consumers started",
+  );
+
+  return consumers;
+}
+
+/**
+ * Example 3: Graceful shutdown of consumers
+ */
+export async function stopAllConsumers({
+  consumers,
+  logger,
+}: {
+  consumers: Array<{
+    cartConsumer: { stop: () => Promise<void> };
+    generatorConsumer: { stop: () => Promise<void> };
+  }>;
+  logger: Logger;
+}) {
+  for (const { cartConsumer, generatorConsumer } of consumers) {
+    await cartConsumer.stop();
+    await generatorConsumer.stop();
+  }
+
+  logger.info({ count: consumers.length }, "All consumers stopped");
+}
+
+/**
+ * Example 4: Using consumers in an application lifecycle
+ */
+export class ConsumerManager {
+  private consumers: Map<
+    string,
+    {
+      cartConsumer: { stop: () => Promise<void> };
+      generatorConsumer: { stop: () => Promise<void> };
+    }
+  > = new Map();
+
+  constructor(
+    private db: DatabaseExecutor,
+    private logger: Logger,
+  ) {}
+
+  async addTenant(tenantId: string) {
+    if (this.consumers.has(tenantId)) {
+      this.logger.warn({ tenantId }, "Consumer already exists for tenant");
+      return;
+    }
+
+    const cartConsumer = createCartsConsumer({
+      db: this.db,
+      logger: this.logger,
+      partition: tenantId,
+      consumerName: `carts-${tenantId}`,
+    });
+
+    const generatorConsumer = createGeneratorsConsumer({
+      db: this.db,
+      logger: this.logger,
+      partition: tenantId,
+      consumerName: `generators-${tenantId}`,
+    });
+
+    await cartConsumer.start();
+    await generatorConsumer.start();
+
+    this.consumers.set(tenantId, { cartConsumer, generatorConsumer });
+
+    this.logger.info({ tenantId }, "Consumers started for tenant");
+  }
+
+  async removeTenant(tenantId: string) {
+    const consumer = this.consumers.get(tenantId);
+    if (!consumer) {
+      this.logger.warn({ tenantId }, "No consumer found for tenant");
+      return;
+    }
+
+    await consumer.cartConsumer.stop();
+    await consumer.generatorConsumer.stop();
+
+    this.consumers.delete(tenantId);
+
+    this.logger.info({ tenantId }, "Consumers stopped for tenant");
+  }
+
+  async shutdown() {
+    const tenantIds = Array.from(this.consumers.keys());
+
+    for (const tenantId of tenantIds) {
+      await this.removeTenant(tenantId);
+    }
+
+    this.logger.info("All consumers shut down");
+  }
+}
+
+/**
+ * Example 5: Integration with application startup
+ */
+export async function bootstrapConsumers({
+  db,
+  logger,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+}) {
+  // Get all active tenants from the database
+  const tenants = await db
+    .selectFrom("tenants")
+    .select("tenant_id")
+    .where("is_active", "=", true)
+    .execute();
+
+  const manager = new ConsumerManager(db, logger);
+
+  // Start consumers for all active tenants
+  for (const tenant of tenants) {
+    await manager.addTenant(tenant.tenant_id);
+  }
+
+  // Set up graceful shutdown
+  process.on("SIGTERM", async () => {
+    logger.info("SIGTERM received, shutting down consumers");
+    await manager.shutdown();
+    process.exit(0);
+  });
+
+  process.on("SIGINT", async () => {
+    logger.info("SIGINT received, shutting down consumers");
+    await manager.shutdown();
+    process.exit(0);
+  });
+
+  logger.info({ tenantCount: tenants.length }, "Consumer bootstrap complete");
+
+  return manager;
+}
+

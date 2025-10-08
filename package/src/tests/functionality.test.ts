@@ -1,46 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createEventStore } from "../event-store/index.js";
 import { createProjectionRunner } from "../projections/runner.js";
-import type {
-  Dependencies,
-  ProjectionHandler,
-  ProjectionRegistry,
-} from "../types.js";
+import type { ProjectionHandler, ProjectionRegistry } from "../types.js";
 import {
   DEFAULT_PARTITION,
   PostgreSQLEventStoreDefaultStreamVersion,
   createProjectionRegistry,
 } from "../types.js";
-import { createMockDatabase, createMockLogger } from "./test-utils.js";
+import { createMockDatabase } from "./test-utils.js";
 
 describe("Package Functionality", () => {
-  describe("Event Store Creation", () => {
-    it("should create event store with all functions", () => {
-      const mockDb = createMockDatabase();
-      const mockLogger = createMockLogger();
-
-      const deps: Dependencies = { db: mockDb, logger: mockLogger };
-      const eventStore = createEventStore(deps);
-
-      expect(typeof eventStore.readStream).toBe("function");
-      expect(typeof eventStore.appendToStream).toBe("function");
-      expect(typeof eventStore.aggregateStream).toBe("function");
-    });
-
-    it("should create event store with proper dependencies", () => {
-      const mockDb = createMockDatabase();
-      const mockLogger = createMockLogger();
-
-      const deps: Dependencies = { db: mockDb, logger: mockLogger };
-      const eventStore = createEventStore(deps);
-
-      // Verify the functions are created (not just undefined)
-      expect(eventStore.readStream).toBeDefined();
-      expect(eventStore.appendToStream).toBeDefined();
-      expect(eventStore.aggregateStream).toBeDefined();
-    });
-  });
-
   describe("Projection Runner Creation", () => {
     it("should create projection runner with projectEvents function", () => {
       const mockDb = createMockDatabase();

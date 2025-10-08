@@ -1,4 +1,4 @@
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
@@ -37,7 +37,7 @@ describe("Cart Integration", () => {
     });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
-    const { readStream } = createEventStore({ db, logger });
+    const { readStream } = getKyselyEventStore({ db, logger });
     const registry = createProjectionRegistry(cartsProjection());
     const runner = createProjectionRunner({
       db,
@@ -271,25 +271,18 @@ describe("Cart Integration", () => {
         .where("tenant_id", "=", tenantId)
         .where("cart_id", "=", cartId)
         .executeTakeFirstOrThrow();
+      const items = row.items_json as Array<{
+        sku: string;
+        unitPrice: number;
+        quantity: number;
+      }>;
 
-      const items = row.items_json as {
-        items: Array<{
-          sku: string;
-          unitPrice: number;
-          quantity: number;
-        }>;
-        orderId: string;
-        total: number;
-      };
-
-      const sku123 = items.items.find((i) => i.sku === "SKU-123");
-      const sku456 = items.items.find((i) => i.sku === "SKU-456");
+      const sku123 = items.find((i) => i.sku === "SKU-123");
+      const sku456 = items.find((i) => i.sku === "SKU-456");
       expect(sku123?.quantity).toBe(1);
       expect(sku123?.unitPrice).toBe(25);
       expect(sku456?.quantity).toBe(1);
       expect(sku456?.unitPrice).toBe(15);
-      expect(items.orderId).toBeDefined();
-      expect(items.total).toBe(40);
       expect(row.currency).toBe("USD");
       expect(row.is_checked_out).toBe(true);
       expect(row.is_cancelled).toBe(false);

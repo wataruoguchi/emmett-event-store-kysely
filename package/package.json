@@ -56,7 +56,7 @@
     "vitest": "^3.2.4"
   },
   "peerDependencies": {
-    "@event-driven-io/emmett": "^0.38.5",
+    "@event-driven-io/emmett": "^0.38.6",
     "kysely": "^0.28.7"
   },
   "optionalDependencies": {

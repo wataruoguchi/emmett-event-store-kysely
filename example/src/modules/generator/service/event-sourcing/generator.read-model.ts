@@ -1,8 +1,11 @@
+import { createKyselyEventStoreConsumer } from "@wataruoguchi/emmett-event-store-kysely";
 import type {
+  ProjectionContext,
   ProjectionEvent,
   ProjectionRegistry,
 } from "@wataruoguchi/emmett-event-store-kysely/projections";
 import type { DatabaseExecutor } from "../../../shared/infra/db.js";
+import type { Logger } from "../../../shared/infra/logger.js";
 import type {
   GeneratorCreatedData,
   GeneratorUpdatedData,
@@ -27,10 +30,36 @@ async function upsertIfNewer(
   await apply(db);
 }
 
+/**
+ * Projection registry that defines how generator events are transformed into read model updates.
+ *
+ * This is the **definition** of projection logic - a mapping of event types to handler functions.
+ *
+ * **When to use this:**
+ * - In tests where you need on-demand, synchronous projection using `createProjectionRunner`
+ * - For batch processing or manual projection triggers
+ * - When you need fine-grained control over when events are projected
+ *
+ * **When NOT to use this:**
+ * - For continuous background processing in production - use `createGeneratorsConsumer()` instead
+ *
+ * @returns ProjectionRegistry mapping event types to handlers
+ *
+ * @example
+ * ```typescript
+ * // In tests: on-demand projection
+ * const registry = generatorsProjection();
+ * const runner = createProjectionRunner({ db, readStream, registry });
+ * await runner.projectEvents('subscription-id', 'stream-id', { partition: 'tenant-123' });
+ * ```
+ */
 export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
   return {
     GeneratorCreated: [
-      async ({ db, partition }, event) => {
+      async (
+        { db, partition }: ProjectionContext<DatabaseExecutor>,
+        event: ProjectionEvent,
+      ) => {
         const data = event.data as GeneratorCreatedData;
         await upsertIfNewer(db, event, async (q) => {
           await q
@@ -72,7 +101,10 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
       },
     ],
     GeneratorUpdated: [
-      async ({ db, partition }, event) => {
+      async (
+        { db, partition }: ProjectionContext<DatabaseExecutor>,
+        event: ProjectionEvent,
+      ) => {
         const data = event.data as GeneratorUpdatedData;
         await upsertIfNewer(db, event, async (q) => {
           await q
@@ -92,7 +124,10 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
       },
     ],
     GeneratorDeleted: [
-      async ({ db, partition }, event) => {
+      async (
+        { db, partition }: ProjectionContext<DatabaseExecutor>,
+        event: ProjectionEvent,
+      ) => {
         await upsertIfNewer(db, event, async (q) => {
           await q
             .updateTable("generators")
@@ -108,4 +143,100 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
       },
     ],
   } satisfies ProjectionRegistry;
+}
+
+/**
+ * Creates a consumer that automatically processes generator events and updates the read model.
+ *
+ * This is the **execution mechanism** - a running consumer that continuously polls for new events
+ * and applies the projection handlers defined in `generatorsProjection()`.
+ *
+ * **When to use this:**
+ * - In production for continuous, automatic read model updates
+ * - When you want background processing with automatic checkpointing
+ * - For real-time or near-real-time read model consistency
+ *
+ * **When NOT to use this:**
+ * - In tests where you need synchronous, on-demand projection - use `generatorsProjection()` with `createProjectionRunner` instead
+ * - When you need fine-grained control over projection timing
+ *
+ * **Key Features:**
+ * - Polls for new events at configurable intervals
+ * - Tracks its position automatically (won't reprocess events)
+ * - Processes events in batches for efficiency
+ * - Supports graceful start/stop
+ *
+ * @param db - Database executor instance
+ * @param logger - Logger instance
+ * @param partition - Partition to process (typically tenant ID)
+ * @param consumerName - Optional custom consumer name for tracking
+ * @param batchSize - Optional batch size for processing events (default: 100)
+ * @param pollingInterval - Optional polling interval in milliseconds (default: 1000)
+ * @returns Consumer instance with start/stop methods
+ *
+ * @example
+ * ```typescript
+ * // In production: continuous background processing
+ * const consumer = createGeneratorsConsumer({
+ *   db,
+ *   logger,
+ *   partition: 'tenant-123',
+ *   consumerName: 'generators-tenant-123',
+ *   batchSize: 50,
+ *   pollingInterval: 500
+ * });
+ *
+ * // Start processing events
+ * await consumer.start();
+ *
+ * // Later, when shutting down
+ * await consumer.stop();
+ * ```
+ */
+export function createGeneratorsConsumer({
+  db,
+  logger,
+  partition,
+  consumerName = "generators-read-model",
+  batchSize = 100,
+  pollingInterval = 1000,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+  partition: string;
+  consumerName?: string;
+  batchSize?: number;
+  pollingInterval?: number;
+}) {
+  const consumer = createKyselyEventStoreConsumer({
+    db,
+    logger,
+    consumerName,
+    batchSize,
+    pollingInterval,
+  });
+
+  // Subscribe to all generator events with the projection handlers
+  const registry = generatorsProjection();
+
+  for (const [eventType, handlers] of Object.entries(registry)) {
+    for (const handler of handlers) {
+      consumer.subscribe(async (event) => {
+        // Convert consumer event to projection event format
+        const projectionEvent: ProjectionEvent = {
+          type: event.type,
+          data: event.data,
+          metadata: {
+            streamId: event.metadata.streamName,
+            streamPosition: event.metadata.streamPosition,
+            globalPosition: event.metadata.globalPosition,
+          },
+        };
+
+        await handler({ db, partition }, projectionEvent);
+      }, eventType);
+    }
+  }
+
+  return consumer;
 }

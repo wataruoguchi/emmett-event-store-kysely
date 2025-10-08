@@ -66,6 +66,3 @@ export function createProjectionRegistry<T = DatabaseExecutor<any>>(
   }
   return combined;
 }
-
-// Re-export ReadStream from event-store
-export type { ReadStream } from "./event-store/read-stream.js";

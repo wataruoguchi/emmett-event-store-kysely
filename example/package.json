@@ -9,6 +9,8 @@
     "prepare": "husky",
     "pretest": "cd ../package && npm run build",
     "test": "vitest run",
+    "t:c": "vitest src/modules/cart/tests",
+    "t:g": "vitest src/modules/generator/tests",
     "test:coverage": "vitest run --coverage",
     "format": "biome format --write",
     "codegen": "kysely-codegen",
@@ -18,9 +20,9 @@
     "proj:worker": "tsx src/workers/projection-worker.ts"
   },
   "dependencies": {
-    "@event-driven-io/emmett": "^0.38.5",
+    "@event-driven-io/emmett": "^0.38.6",
     "@hono/node-server": "^1.19.4",
-    "@wataruoguchi/emmett-event-store-kysely": "^1.1.3",
+    "@wataruoguchi/emmett-event-store-kysely": "file:../package",
     "hono": "^4.9.8",
     "kysely": "^0.28.7",
     "pg": "^8.16.3",

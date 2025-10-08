@@ -1,4 +1,4 @@
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import { Hono } from "hono";
 import {
   createContextMiddleware,
@@ -18,7 +18,7 @@ export function createCartService(
   { tenantService }: { tenantService: TenantService },
   { db, logger }: { db: DatabaseExecutor; logger: Logger },
 ): CartService {
-  const eventStore = createEventStore({ db, logger });
+  const eventStore = getKyselyEventStore({ db, logger });
   return createCartServiceFactory({
     repository: createCartRepository({ db, logger }),
     findTenantByIdService: tenantService.get,

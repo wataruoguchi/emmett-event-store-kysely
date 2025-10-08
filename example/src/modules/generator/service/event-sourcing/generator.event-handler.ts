@@ -6,7 +6,7 @@ import {
   type Command,
   type Event,
 } from "@event-driven-io/emmett";
-import type { EventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import type { KyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import type { AppContext } from "../../../shared/hono/context-middleware.js";
 import type { GeneratorEntity } from "../../domain/generator.entity.js";
 
@@ -35,7 +35,7 @@ export function generatorEventHandler({
   eventStore,
   getContext,
 }: {
-  eventStore: EventStore;
+  eventStore: KyselyEventStore;
   getContext: () => AppContext;
 }) {
   const handler = DeciderCommandHandler({

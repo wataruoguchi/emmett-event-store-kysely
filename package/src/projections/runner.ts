@@ -1,11 +1,11 @@
 import type { Event } from "@event-driven-io/emmett";
 import type { OnConflictBuilder } from "kysely";
 import type { EventStoreDBSchema } from "../db-schema.js";
+import type { KyselyEventStore } from "../event-store/kysely-event-store.js";
 import type {
   DatabaseExecutor,
   ProjectionEvent,
   ProjectionRegistry,
-  ReadStream,
 } from "../types.js";
 
 export type SubscriptionCheckpoint = {
@@ -18,7 +18,7 @@ export type ProjectionRunnerDeps<
   T extends DatabaseExecutor = DatabaseExecutor,
 > = {
   db: T;
-  readStream: ReadStream;
+  readStream: KyselyEventStore["readStream"];
   registry: ProjectionRegistry<T>;
 };
 

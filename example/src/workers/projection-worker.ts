@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
@@ -28,7 +28,7 @@ main(partition).catch((err) => {
  */
 async function main(partition: string) {
   const db = getDb();
-  const readStream = createReadStream({ db, logger });
+  const { readStream } = getKyselyEventStore({ db, logger });
   const registry = createProjectionRegistry(generatorsProjection());
   const runner = createProjectionRunner({
     db,

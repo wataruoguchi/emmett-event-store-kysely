@@ -6,7 +6,7 @@ import {
   type Command,
   type Event,
 } from "@event-driven-io/emmett";
-import type { EventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import type { KyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import type { AppContext } from "../../../shared/hono/context-middleware.js";
 import type { CartEntity, CartItem } from "../../domain/cart.entity.js";
 
@@ -17,7 +17,7 @@ export function cartEventHandler({
   eventStore,
   getContext,
 }: {
-  eventStore: EventStore;
+  eventStore: KyselyEventStore;
   getContext: () => AppContext;
 }) {
   const handler = DeciderCommandHandler({
@@ -35,7 +35,10 @@ export function cartEventHandler({
         eventStore,
         cartId,
         { type: "CreateCart", data },
-        { partition: data.tenantId, streamType: "cart" },
+        {
+          partition: data.tenantId,
+          streamType: "cart",
+        },
       ),
     addItem: (cartId: string, data: { tenantId: string; item: CartItem }) =>
       handler(

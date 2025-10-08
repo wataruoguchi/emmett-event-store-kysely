@@ -1,5 +1,5 @@
 import { faker } from "@faker-js/faker";
-import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
@@ -44,7 +44,7 @@ describe("Generator Integration", () => {
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     // Projection runner (in-test integration of the worker)
-    const readStream = createReadStream({ db, logger });
+    const { readStream } = getKyselyEventStore({ db, logger });
     const registry = createProjectionRegistry(generatorsProjection());
     const runner = createProjectionRunner({
       db,
