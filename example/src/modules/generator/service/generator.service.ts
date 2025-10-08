@@ -1,4 +1,4 @@
-import type { TenantService } from "../../tenant/tenant.index.js";
+import type { TenantServiceAdapter } from "../../tenant/tenant.index.js";
 import { GeneratorEntitySchema } from "../domain/generator.entity.js";
 import {
   GeneratorInvalidInputError,
@@ -11,7 +11,7 @@ import type { GeneratorEventHandler } from "./event-sourcing/generator.event-han
 type Dependencies = {
   handler: GeneratorEventHandler;
   repository: GeneratorRepository;
-  findTenantByIdService: TenantService["get"];
+  findTenantByIdService: TenantServiceAdapter["get"];
 };
 
 type GetGenerator = ReturnType<typeof createGetGeneratorService>;

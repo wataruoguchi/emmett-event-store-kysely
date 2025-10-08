@@ -11,7 +11,7 @@ import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantService } from "../../tenant/tenant.index.js";
+import { createTenantServiceAdapter } from "../../tenant/tenant.index.js";
 import {
   createGeneratorApp,
   createGeneratorService,
@@ -36,7 +36,7 @@ describe("Generator Integration", () => {
     db = await createTestDb(TEST_DB_NAME);
     app = createGeneratorApp({
       generatorService: createGeneratorService(
-        { tenantService: createTenantService({ db, logger }) },
+        { tenantService: createTenantServiceAdapter({ db, logger }) },
         { db, logger },
       ),
       logger,

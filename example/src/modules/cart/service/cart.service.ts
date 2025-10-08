@@ -1,4 +1,4 @@
-import type { TenantService } from "../../tenant/tenant.index.js";
+import type { TenantServiceAdapter } from "../../tenant/tenant.index.js";
 import { CartEntitySchema, CartItemSchema } from "../domain/cart.entity.js";
 import type { CartRepository } from "../repository/cart.repo.js";
 import type { CartEventHandler } from "./event-sourcing/cart.event-handler.js";
@@ -6,7 +6,7 @@ import type { CartEventHandler } from "./event-sourcing/cart.event-handler.js";
 type Dependencies = {
   handler: CartEventHandler;
   repository: CartRepository;
-  findTenantByIdService: TenantService["get"];
+  findTenantByIdService: TenantServiceAdapter["get"];
 };
 
 type GetCart = ReturnType<typeof createGetCartService>;

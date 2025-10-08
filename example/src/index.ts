@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { createCartApp, createCartService } from "./modules/cart/cart.index.js";
 import {
   createGeneratorApp,
   createGeneratorService,
@@ -8,9 +9,8 @@ import { getDb } from "./modules/shared/infra/db.js";
 import { logger } from "./modules/shared/infra/logger.js";
 import {
   createTenantApp,
-  createTenantService,
+  createTenantServiceAdapter,
 } from "./modules/tenant/tenant.index.js";
-import { createCartApp, createCartService } from "./modules/cart/cart.index.js";
 
 const app = new Hono();
 const db = getDb();
@@ -19,11 +19,13 @@ app.get("/", (c) => {
   return c.text("Hello Hono!");
 });
 
-const tenantService = createTenantService({ db, logger });
 /**
  * Tenant module starts here
  */
-app.route("", createTenantApp({ tenantService, logger }));
+app.route("", createTenantApp({ db, logger }));
+
+// Create tenant service adapter for cart and generator modules
+const tenantService = createTenantServiceAdapter({ db, logger });
 
 /**
  * Generator module starts here

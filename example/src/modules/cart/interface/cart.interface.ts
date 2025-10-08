@@ -6,7 +6,7 @@ import {
 } from "../../shared/hono/context-middleware.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import type { TenantService } from "../../tenant/tenant.index.js";
+import type { TenantServiceAdapter } from "../../tenant/tenant.index.js";
 import { createCartRepository } from "../repository/cart.repo.js";
 import {
   createCartServiceFactory,
@@ -15,7 +15,7 @@ import {
 import { cartEventHandler } from "../service/event-sourcing/cart.event-handler.js";
 
 export function createCartService(
-  { tenantService }: { tenantService: TenantService },
+  { tenantService }: { tenantService: TenantServiceAdapter },
   { db, logger }: { db: DatabaseExecutor; logger: Logger },
 ): CartService {
   const eventStore = createEventStore({ db, logger });
