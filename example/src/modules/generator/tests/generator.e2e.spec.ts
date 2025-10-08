@@ -11,13 +11,8 @@ import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantServiceAdapter } from "../../tenant/tenant.index.js";
-import {
-  createGeneratorApp,
-  createGeneratorService,
-} from "../generator.index.js";
+import { createGeneratorApp } from "../generator.index.js";
 import { generatorsProjection } from "../service/event-sourcing/generator.read-model.js";
-import type { GeneratorService } from "../service/generator.service.js";
 
 describe("Generator Integration", () => {
   const TEST_DB_NAME = "generator_e2e_test";
@@ -34,13 +29,7 @@ describe("Generator Integration", () => {
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createGeneratorApp({
-      generatorService: createGeneratorService(
-        { tenantService: createTenantServiceAdapter({ db, logger }) },
-        { db, logger },
-      ),
-      logger,
-    });
+    app = createGeneratorApp({ db, logger });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     // Projection runner (in-test integration of the worker)
@@ -97,7 +86,7 @@ describe("Generator Integration", () => {
         },
       );
       const json = await response.json();
-      generatorId = json.generatorId;
+      generatorId = json.generator_id;
       await project();
     });
 
@@ -144,7 +133,7 @@ describe("Generator Integration", () => {
         },
       );
       const json = await response.json();
-      generatorId = json.generatorId;
+      generatorId = json.generator_id;
       await project();
     });
 
@@ -174,7 +163,7 @@ describe("Generator Integration", () => {
           },
         );
         const json = await response.json();
-        generatorId = json.generatorId;
+        generatorId = json.generator_id;
       })();
       await (async function updateGenerator() {
         await app.request(
@@ -224,7 +213,7 @@ describe("Generator Integration", () => {
         },
       );
       const json = await response.json();
-      generatorId = json.generatorId;
+      generatorId = json.generator_id;
       await project();
     });
 
@@ -237,9 +226,7 @@ describe("Generator Integration", () => {
       );
       expect(response.status).toBe(200);
       // Type Declaration should come from the interface, not the implementation.
-      const list = (await response.json()) as Awaited<
-        ReturnType<GeneratorService["getAll"]>
-      >;
+      const list = (await response.json()) as { generator_id: string }[];
       expect(Array.isArray(list)).toBe(true);
       expect(list.some((g) => g && g.generator_id === generatorId)).toBe(true);
     });
