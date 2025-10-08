@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { createCartApp, createCartService } from "./modules/cart/cart.index.js";
+import { createCartApp } from "./modules/cart/cart.index.js";
 import {
   createGeneratorApp,
   createGeneratorService,
@@ -41,13 +41,7 @@ app.route(
 /**
  * Cart module starts here
  */
-app.route(
-  "",
-  createCartApp({
-    cartService: createCartService({ tenantService }, { db, logger }),
-    logger,
-  }),
-);
+app.route("", createCartApp({ db, logger }));
 
 serve(
   {
