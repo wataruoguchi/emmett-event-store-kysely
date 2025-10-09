@@ -1,76 +1,250 @@
 # Projections Architecture
 
-This document explains the distinction between **projection registries** and **consumers** in this event-sourced system.
+This document explains how projections work in this event-sourced application and the distinction between **snapshot projections** (recommended), **projection runners**, and **consumers**.
 
-## Key Concepts
+## Quick Overview
 
-### 1. Projection Registry (`cartsProjection()` / `generatorsProjection()`)
+| Component | Purpose | Use When |
+|-----------|---------|----------|
+| **Snapshot Projection** | Define how events → state | Always (recommended approach) |
+| **Projection Runner** | Execute projections on-demand | Testing, backfills |
+| **Consumer** | Execute projections continuously | Production |
 
-**What it is:**
-- A plain object mapping event types to handler functions
-- The **definition** of how events transform into read model updates
-- Pure logic with no execution mechanism
+## 1. Snapshot Projections (Recommended) ⭐
 
-**When to use:**
-- ✅ In **tests** for synchronous, on-demand projection
-- ✅ For **batch processing** or manual projection triggers
-- ✅ When you need **fine-grained control** over projection timing
+### What It Is
 
-**When NOT to use:**
-- ❌ For continuous background processing in production (use consumers instead)
+A **snapshot projection** stores the complete aggregate state in a JSONB column by reusing your write model's `evolve` function.
 
-**Example:**
+**Key Innovation:** Same `evolve` logic for writes AND reads!
+
 ```typescript
-// Get the projection registry
-const registry = cartsProjection();
+// cart.event-handler.ts (Write Model)
+export function createEvolve() {
+  return (state: CartDomainState, event: CartDomainEvent): CartDomainState => {
+    switch (event.type) {
+      case "CartCreated":
+        return { status: "active", cartId: event.data.cartId, items: [] };
+      case "ItemAdded":
+        return { ...state, items: [...state.items, event.data.item] };
+      // ...
+    }
+  };
+}
 
-// Use it with the projection runner for on-demand projection
-const runner = createProjectionRunner({ db, readStream, registry });
-await runner.projectEvents('subscription-id', 'stream-id', { 
-  partition: 'tenant-123' 
-});
+// cart.read-model.ts (Read Model)
+import { createSnapshotProjectionRegistry } from "@wataruoguchi/emmett-event-store-kysely/projections";
+
+export function cartsSnapshotProjection() {
+  const domainEvolve = createEvolve(); // Reuse!
+  
+  return createSnapshotProjectionRegistry<CartDomainState, "carts", CartDomainEvent>(
+    ["CartCreated", "ItemAdded", "CartCheckedOut"],
+    {
+      tableName: "carts",
+      primaryKeys: ["tenant_id", "cart_id", "partition"],
+      extractKeys: (event, partition) => ({
+        tenant_id: event.data.eventMeta.tenantId,
+        cart_id: event.data.eventMeta.cartId,
+        partition,
+      }),
+      evolve: (state, event) => domainEvolve(state, event), // Same logic!
+      initialState,
+      mapToColumns: (state) => ({  // Optional: denormalize for queries
+        currency: state.status !== "init" ? state.currency : null,
+        total: state.status === "checkedOut" ? state.total : null,
+      }),
+    }
+  );
+}
+```
+
+### Benefits
+
+✅ **Consistency** - Same logic as write model  
+✅ **No Schema Migrations** - Add fields without DB changes  
+✅ **Less Code** - No manual field mapping  
+✅ **Complete State** - Full aggregate always available  
+✅ **Optional Denormalization** - Extract fields for queries
+
+### Database Table
+
+```sql
+CREATE TABLE carts (
+  tenant_id VARCHAR(100) NOT NULL,
+  cart_id VARCHAR(100) NOT NULL,
+  partition VARCHAR(100) NOT NULL,
+  
+  -- Required: Complete state
+  snapshot JSONB NOT NULL,
+  
+  -- Required: Tracking
+  stream_id VARCHAR(255) NOT NULL,
+  last_stream_position BIGINT NOT NULL,
+  last_global_position BIGINT NOT NULL,
+  
+  -- Optional: Denormalized for queries
+  currency VARCHAR(3),
+  total NUMERIC(10, 2),
+  is_checked_out BOOLEAN,
+  
+  PRIMARY KEY (tenant_id, cart_id, partition)
+);
+```
+
+### How It Works
+
+```
+┌─────────────┐
+│   Event     │
+│ CartCreated │
+└──────┬──────┘
+       │
+       ↓
+┌──────────────────┐
+│ Load Snapshot    │ ← Read existing snapshot from DB
+│ (if exists)      │   or use initialState()
+└──────┬───────────┘
+       │
+       ↓
+┌──────────────────┐
+│ Apply Evolve     │ ← newState = evolve(currentState, event)
+└──────┬───────────┘
+       │
+       ↓
+┌──────────────────┐
+│ Save Snapshot    │ ← UPDATE snapshot = JSON.stringify(newState)
+│ + Denormalized   │   + optional denormalized columns
+└──────────────────┘
 ```
 
 ---
 
-### 2. Consumer (`createCartsConsumer()` / `createGeneratorsConsumer()`)
+## 2. Projection Runner
 
-**What it is:**
-- A running service that continuously polls for events
-- The **execution mechanism** that uses the projection registry
-- Handles checkpointing, batching, and lifecycle management
+### What It Is
 
-**When to use:**
-- ✅ In **production** for continuous, automatic read model updates
-- ✅ For **background processing** with automatic checkpointing
-- ✅ For **real-time or near-real-time** read model consistency
+The **projection runner** executes projections **on-demand** and **synchronously**.
 
-**When NOT to use:**
-- ❌ In tests where you need synchronous projection (use registries instead)
+**Use for:** Tests, backfills, manual control
 
-**Key Features:**
-- Polls for new events at configurable intervals
-- Tracks its position automatically (won't reprocess events)
-- Processes events in batches for efficiency
-- Supports graceful start/stop
+### Example
 
-**Example:**
 ```typescript
-// Create and start a consumer
-const consumer = createCartsConsumer({
-  db,
-  logger,
-  partition: 'tenant-123',
-  consumerName: 'carts-tenant-123',
-  batchSize: 50,
-  pollingInterval: 500 // ms
+import {
+  createProjectionRunner,
+  createProjectionRegistry,
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+
+// In test setup
+const eventStore = getKyselyEventStore({ db, logger });
+const registry = createProjectionRegistry(cartsSnapshotProjection());
+const runner = createProjectionRunner({ 
+  db, 
+  readStream: eventStore.readStream, 
+  registry 
 });
 
+// In test
+it("should create cart", async () => {
+  // 1. Execute command
+  await cartService.create({ tenantId, cartId, currency: "USD" });
+  
+  // 2. Project events synchronously
+  await runner.projectEvents("subscription-id", cartId, {
+    partition: tenantId,
+  });
+  
+  // 3. Verify read model
+  const cart = await db
+    .selectFrom("carts")
+    .where("cart_id", "=", cartId)
+    .executeTakeFirstOrThrow();
+  
+  expect(cart.currency).toBe("USD");
+});
+```
+
+### Characteristics
+
+- ✅ **Synchronous** - Immediate execution
+- ✅ **Deterministic** - You control when it runs
+- ✅ **Fast** - No polling delays
+- ✅ **Simple** - Easy to use in tests
+
+---
+
+## 3. Consumer (For Production)
+
+### What It Is
+
+A **consumer** continuously polls for new events and applies projections **automatically**.
+
+**Use for:** Production, background workers, real-time updates
+
+### Example
+
+```typescript
+import { createKyselyEventStoreConsumer } from "@wataruoguchi/emmett-event-store-kysely";
+
+export function createCartsConsumer({
+  db,
+  logger,
+  partition,
+  consumerName = "carts-read-model",
+}) {
+  const consumer = createKyselyEventStoreConsumer({
+    db,
+    logger,
+    consumerName,
+    batchSize: 100,
+    pollingInterval: 1000, // Poll every 1 second
+  });
+
+  // Get snapshot projection registry
+  const registry = cartsSnapshotProjection();
+
+  // Subscribe to all events in the registry
+  for (const [eventType, handlers] of Object.entries(registry)) {
+    for (const handler of handlers) {
+      consumer.subscribe(
+        async (event) => {
+          // Convert consumer event format to projection event format
+          const projectionEvent = {
+            type: event.type,
+            data: event.data,
+            metadata: {
+              streamId: event.metadata.streamName,
+              streamPosition: event.metadata.streamPosition,
+              globalPosition: event.metadata.globalPosition,
+            },
+          };
+
+          await handler({ db, partition }, projectionEvent);
+        },
+        eventType
+      );
+    }
+  }
+
+  return consumer;
+}
+
+// Usage
+const consumer = createCartsConsumer({ db, logger, partition: "tenant-123" });
 await consumer.start();
 
 // Later, stop gracefully
 await consumer.stop();
 ```
+
+### Characteristics
+
+- ✅ **Automatic** - Continuously processes events
+- ✅ **Checkpoint Tracking** - Resumes from last position
+- ✅ **Production-Ready** - Handles errors, batching
+- ⚠️ **Asynchronous** - Not instant (polling interval)
 
 ---
 
@@ -79,69 +253,75 @@ await consumer.stop();
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Event Store                          │
-│  (streams table with events in append-only fashion)     │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      │ Events written here
-                      │
-         ┌────────────┴────────────┐
-         │                         │
-         │                         │
-    ┌────▼────┐              ┌────▼────────┐
-    │  Tests  │              │ Production  │
-    └────┬────┘              └────┬────────┘
-         │                        │
-         │                        │
-    ┌────▼─────────────┐    ┌────▼──────────────────┐
-    │ cartsProjection()│    │createCartsConsumer()  │
-    │  (Registry)      │    │   (Consumer)          │
-    │                  │    │                       │
-    │ ┌──────────────┐ │    │ Uses cartsProjection()│
-    │ │Event->Handler│ │    │ internally            │
-    │ │   Mapping    │ │    │                       │
-    │ └──────────────┘ │    │ ┌──────────────────┐  │
-    └────┬─────────────┘    │ │ Polls for events │  │
-         │                  │ │ Tracks position  │  │
-         │                  │ │ Applies handlers │  │
-    ┌────▼─────────────┐    │ └──────────────────┘  │
-    │createProjection  │    └────┬──────────────────┘
-    │    Runner        │         │
-    │                  │         │
-    │ Manual trigger   │         │ Automatic
-    │ On-demand        │         │ Continuous
-    └────┬─────────────┘         │
-         │                       │
-         │                       │
-         └───────┬───────────────┘
-                 │
-                 │
-         ┌───────▼────────┐
-         │  Read Model    │
-         │  (carts table) │
-         └────────────────┘
+│          (messages, streams, subscriptions)             │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       │ Events written
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          │                         │
+     ┌────▼────┐               ┌────▼────────┐
+     │  Tests  │               │ Production  │
+     └────┬────┘               └────┬────────┘
+          │                         │
+          │                         │
+     ┌────▼──────────────┐     ┌────▼─────────────────┐
+     │ Projection Runner │     │     Consumer         │
+     │                   │     │                      │
+     │ On-demand         │     │ Continuous polling   │
+     │ Synchronous       │     │ Automatic            │
+     └────┬──────────────┘     └────┬─────────────────┘
+          │                         │
+          │                         │
+          └─────────┬───────────────┘
+                    │
+                    │ Both use
+                    │
+          ┌─────────▼──────────────┐
+          │ Snapshot Projection    │
+          │  Registry              │
+          │                        │
+          │ • Event → Handler map  │
+          │ • Reuses evolve()      │
+          │ • Stores snapshot      │
+          └─────────┬──────────────┘
+                    │
+                    │
+          ┌─────────▼──────────┐
+          │   Read Model       │
+          │   (carts table)    │
+          │                    │
+          │ • snapshot (JSONB) │
+          │ • denormalized cols│
+          └────────────────────┘
 ```
 
 ---
 
 ## Usage Patterns
 
-### Pattern 1: Testing (Synchronous Projection)
+### Pattern 1: Testing with Projection Runner
 
 ```typescript
-describe('Cart E2E Tests', () => {
+describe("Cart E2E Tests", () => {
+  let runner: ReturnType<typeof createProjectionRunner>;
   let project: () => Promise<void>;
 
-  beforeAll(() => {
-    // Set up on-demand projection for tests
-    const { readStream } = createEventStore({ db, logger });
-    const registry = createProjectionRegistry(cartsProjection());
-    const runner = createProjectionRunner({ db, readStream, registry });
+  beforeAll(async () => {
+    const eventStore = getKyselyEventStore({ db, logger });
+    const registry = createProjectionRegistry(cartsSnapshotProjection());
+    runner = createProjectionRunner({ 
+      db, 
+      readStream: eventStore.readStream, 
+      registry 
+    });
     
     project = async () => {
       const streams = await db
-        .selectFrom('streams')
-        .select(['stream_id'])
-        .where('partition', '=', tenantId)
+        .selectFrom("streams")
+        .select(["stream_id"])
+        .where("partition", "=", tenantId)
         .execute();
         
       for (const s of streams) {
@@ -154,41 +334,40 @@ describe('Cart E2E Tests', () => {
     };
   });
 
-  it('should create a cart', async () => {
-    // 1. Execute action
-    await cartService.create({ tenantId, cartId, currency: 'USD' });
+  it("should create cart", async () => {
+    await cartService.create({ tenantId, cartId, currency: "USD" });
+    await project();  // Synchronous projection
     
-    // 2. Project events (synchronous, controlled)
-    await project();
-    
-    // 3. Verify read model
     const cart = await db
-      .selectFrom('carts')
-      .where('cart_id', '=', cartId)
-      .executeTakeFirst();
+      .selectFrom("carts")
+      .where("cart_id", "=", cartId)
+      .executeTakeFirstOrThrow();
     
-    expect(cart).toBeDefined();
+    expect(cart.currency).toBe("USD");
+    
+    // Access full state from snapshot
+    const state = cart.snapshot as CartDomainState;
+    expect(state.status).toBe("active");
+    expect(state.items).toHaveLength(0);
   });
 });
 ```
 
-### Pattern 2: Production (Continuous Background Processing)
+### Pattern 2: Production with Consumer
 
 ```typescript
-// In application bootstrap
-async function startApplication({ db, logger }) {
-  // Get all active tenants
+// In projection-worker.ts
+async function startConsumers() {
   const tenants = await db
-    .selectFrom('tenants')
-    .select('tenant_id')
-    .where('is_active', '=', true)
+    .selectFrom("tenants")
+    .select("tenant_id")
+    .where("is_active", "=", true)
     .execute();
 
-  // Start consumers for each tenant
   const consumers = [];
   
   for (const tenant of tenants) {
-    const cartConsumer = createCartsConsumer({
+    const consumer = createCartsConsumer({
       db,
       logger,
       partition: tenant.tenant_id,
@@ -197,18 +376,16 @@ async function startApplication({ db, logger }) {
       pollingInterval: 1000,
     });
     
-    await cartConsumer.start();
-    consumers.push(cartConsumer);
+    await consumer.start();
+    consumers.push(consumer);
   }
 
   // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    logger.info('Shutting down consumers...');
-    
+  process.on("SIGTERM", async () => {
+    logger.info("Shutting down consumers...");
     for (const consumer of consumers) {
       await consumer.stop();
     }
-    
     process.exit(0);
   });
 
@@ -218,45 +395,100 @@ async function startApplication({ db, logger }) {
 
 ---
 
-## Relationship
+## Comparison: Snapshot vs Traditional Projections
 
-**The consumer USES the projection registry:**
+### Snapshot Projections (Recommended)
 
 ```typescript
-export function createCartsConsumer({ db, logger, partition, ... }) {
-  const consumer = createKyselyEventStoreConsumer({ db, logger, ... });
-
-  // Get the projection registry
-  const registry = cartsProjection(); // <-- Uses the registry
-  
-  // Subscribe all handlers to the consumer
-  for (const [eventType, handlers] of Object.entries(registry)) {
-    for (const handler of handlers) {
-      consumer.subscribe(async (event) => {
-        // Convert and apply handler
-        await handler({ db, partition }, event);
-      }, eventType);
-    }
+// ✅ Reuse evolve function
+const registry = createSnapshotProjectionRegistry(
+  ["CartCreated", "ItemAdded"],
+  {
+    evolve: domainEvolve,  // Same as write model!
+    mapToColumns: (state) => ({
+      currency: state.currency,  // Optional denormalization
+    }),
   }
-
-  return consumer;
-}
+);
 ```
+
+**Benefits:**
+
+- ✅ Less code
+- ✅ Consistency guaranteed
+- ✅ No schema migrations
+- ✅ Full state always available
+
+### Traditional Projections (Alternative)
+
+```typescript
+// ❌ Manual field mapping for each event
+const registry = {
+  CartCreated: [async ({ db }, event) => {
+    await db.insertInto("carts").values({
+      cart_id: event.data.cartId,
+      currency: event.data.currency,
+      items: JSON.stringify([]),
+      total: 0,
+      // ... manually map all fields
+    }).execute();
+  }],
+  ItemAdded: [async ({ db }, event) => {
+    // Load cart
+    const cart = await db.selectFrom("carts")...;
+    
+    // Manually update fields
+    const items = JSON.parse(cart.items);
+    items.push(event.data.item);
+    
+    await db.updateTable("carts")
+      .set({ items: JSON.stringify(items) })
+      .execute();
+  }],
+};
+```
+
+**Trade-offs:**
+
+- ❌ More code to maintain
+- ❌ Logic duplicated from write model
+- ❌ Schema migrations for new fields
+- ✅ All fields as columns (no JSONB queries)
 
 ---
 
 ## Summary
 
-| Aspect | Projection Registry | Consumer |
-|--------|-------------------|----------|
-| **What** | Definition (mapping) | Execution mechanism |
-| **When** | Tests, batch jobs | Production, background |
-| **How** | Manual trigger | Automatic polling |
-| **Control** | High (you decide when) | Low (runs continuously) |
-| **State** | Stateless | Stateful (tracks position) |
-| **Use Case** | Synchronous projection | Asynchronous projection |
+**Three Components:**
 
-**Rule of thumb:**
-- Use `cartsProjection()` when you need to **control when** events are projected
-- Use `createCartsConsumer()` when you want events projected **automatically**
+1. **Snapshot Projection** (What to do)
+   - Defines event → state transformation
+   - Reuses write model `evolve`
+   - Stores complete state + optional denormalized columns
 
+2. **Projection Runner** (How to do it - Tests)
+   - Executes projections on-demand
+   - Synchronous and deterministic
+   - Perfect for testing
+
+3. **Consumer** (How to do it - Production)
+   - Executes projections continuously
+   - Automatic checkpointing
+   - Production-ready background processing
+
+**Rule of Thumb:**
+
+- 📝 **Define once:** Snapshot projection with `evolve`
+- 🧪 **Test:** Use projection runner
+- 🚀 **Production:** Use consumer
+
+**Example Files:**
+
+- `cart.event-handler.ts` - Write model (decide, evolve)
+- `cart.read-model.ts` - Snapshot projection definition
+- `cart.e2e.spec.ts` - Tests with projection runner
+- `cart.consumer.spec.ts` - Tests with consumer
+
+**Further Reading:**
+
+- [Testing Projections](./TESTING_PROJECTIONS.md)

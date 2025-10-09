@@ -1,134 +1,237 @@
-# Emmett EventStore Examples
+# Example Application Documentation
 
-This directory contains examples demonstrating how to use the `@wataruoguchi/emmett-event-store-kysely` package.
+This directory contains documentation and examples for using the `@wataruoguchi/emmett-event-store-kysely` package in a real application.
+
+## Quick Links
+
+- 📦 [Package Documentation](../../../../package/docs/README.md) - Core library documentation
+- 🔧 [Projections Architecture](./PROJECTIONS_ARCHITECTURE.md) - How projections work in this app
+- 🧪 [Testing Projections](./TESTING_PROJECTIONS.md) - Testing strategies
+- 🔄 [Consumer Usage](./consumer-usage.ts.example) - Background processing examples
 
 ## Overview
 
-The package now provides two APIs:
+This example application demonstrates:
 
-### 1. **Emmett-Style API** (Recommended) ⭐
+1. **Event-Sourced Domain Models** (Cart & Generator modules)
+2. **Snapshot Projections** (Recommended read model approach)
+3. **Multi-Tenancy** (Partition-based isolation)
+4. **Testing Strategies** (Projection Runner for tests, Consumer for production)
 
-Following the patterns from `@event-driven-io/emmett-postgresql`:
+## Key Concepts
+
+### 1. Event Store
+
+The core event store provides:
+- `appendToStream()` - Write events
+- `readStream()` - Read events from a stream
+- `aggregateStream()` - Rebuild aggregate state
 
 ```typescript
-import { getKyselyEventStore, createKyselyEventStoreConsumer } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 
-// Create event store
 const eventStore = getKyselyEventStore({ db, logger });
 
-// Use EventStore interface
-await eventStore.appendToStream(streamId, events, options);
-await eventStore.readStream(streamId, options);
-await eventStore.aggregateStream(streamId, options);
-
-// Create consumer
-const consumer = createKyselyEventStoreConsumer({ db, logger, consumerName: "my-consumer" });
-consumer.subscribe(handler, eventType);
-await consumer.start();
+await eventStore.appendToStream(
+  "cart-123",
+  [{ type: "CartCreated", data: {...} }],
+  { partition: "tenant-456", streamType: "cart" }
+);
 ```
 
-### 2. **Legacy API** (Backward Compatible)
+### 2. Snapshot Projections (Recommended) ⭐
 
-The original functional approach:
+Build read models by storing complete aggregate state in a JSONB column:
 
 ```typescript
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import { 
+  createSnapshotProjectionRegistry 
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
 
-// Create event store with individual functions
-const { readStream, appendToStream, aggregateStream } = createEventStore({ db, logger });
-
-// Use individual functions
-await appendToStream(streamId, events, options);
-await readStream(streamId, options);
-await aggregateStream(streamId, options);
+// Reuse your write model's evolve function!
+const registry = createSnapshotProjectionRegistry(
+  ["CartCreated", "ItemAdded", "CartCheckedOut"],
+  {
+    tableName: "carts",
+    primaryKeys: ["tenant_id", "cart_id", "partition"],
+    extractKeys: (event, partition) => ({...}),
+    evolve: domainEvolve,  // Same logic as write model
+    initialState,
+    mapToColumns: (state) => ({...}), // Optional denormalization
+  }
+);
 ```
 
-## Files
+**Why snapshots?**
+- ✅ Consistency with write model (same `evolve`)
+- ✅ No schema migrations for new fields
+- ✅ Less code maintenance
+- ✅ Full state always available
 
-### `emmett-style-usage.ts`
+See [Snapshot Projections Guide](../../../../package/docs/snapshot-projections.md) for details.
 
-Comprehensive examples showing:
+### 3. Testing vs Production
 
-1. **Basic EventStore usage** - Creating carts, adding items, reading events
-2. **Event Consumer** - Building read models from events
-3. **API Comparison** - Legacy vs Emmett-style
-4. **Transactions** - Using `withSession` for transactional operations
-
-### Integration with existing modules
-
-The cart and generator modules now expose both APIs:
-
+**In Tests (Synchronous):**
 ```typescript
-// Legacy (existing code continues to work)
-const cartService = createCartService({ tenantService }, { db, logger });
+import { 
+  createProjectionRunner 
+} from "@wataruoguchi/emmett-event-store-kysely/projections";
 
-// Emmett-style (recommended for new code)
-const cartService = createCartServiceEmmettStyle({ tenantService }, { db, logger });
+const runner = createProjectionRunner({ db, readStream, registry });
+await runner.projectEvents("subscription-id", "cart-123", { partition });
 ```
 
-## Key Benefits of Emmett-Style API
-
-1. ✅ **Better Type Inference** - Works seamlessly with TypeScript
-2. ✅ **Consistency** - Matches `@event-driven-io/emmett-postgresql` patterns
-3. ✅ **Transaction Support** - Built-in `withSession` for transactional operations
-4. ✅ **Schema Management** - Access to schema utilities
-5. ✅ **EventStoreSessionFactory** - Support for Emmett's session patterns
-
-## Running the Examples
-
-The examples are integrated into the main application structure. You can:
-
-1. **Use in your services** - Import and use the functions in your domain services
-2. **Run tests** - The examples follow the same patterns as the existing tests
-3. **Extend** - Use these as templates for your own event sourcing implementations
-
-## Migration Guide
-
-### From Legacy to Emmett-Style
-
-**Before (Legacy):**
+**In Production (Continuous):**
 
 ```typescript
-const { readStream, appendToStream } = createEventStore({ db, logger });
-await appendToStream("stream-1", events);
-```
+import { createKyselyEventStoreConsumer } from "@wataruoguchi/emmett-event-store-kysely";
 
-**After (Emmett-Style):**
-
-```typescript
-const eventStore = getKyselyEventStore({ db, logger });
-await eventStore.appendToStream("stream-1", events);
-```
-
-Both approaches work and are fully supported! Choose based on your needs:
-
-- **Legacy** - If you prefer functional approach or have existing code
-- **Emmett-Style** - If you want consistency with Emmett ecosystem
-
-## Consumer Pattern
-
-The consumer is great for building read models:
-
-```typescript
 const consumer = createKyselyEventStoreConsumer({
-  db,
-  logger,
-  consumerName: "cart-read-model",
-  batchSize: 50,
-  pollingInterval: 1000,
+  db, logger, consumerName: "carts-read-model",
 });
 
-// Subscribe to specific events
-consumer.subscribe(async (event) => {
-  // Update your read model
-  await db.insertInto('carts').values({...}).execute();
-}, "CartCreated");
+// Subscribe to projection handlers
+for (const [eventType, handlers] of Object.entries(registry)) {
+  consumer.subscribe(async (event) => {
+    await handler({ db, partition }, event);
+  }, eventType);
+}
 
 await consumer.start();
+```
+
+## Key Files
+
+### Domain Modules
+
+Each module follows event sourcing patterns:
+
+**Write Model** (`cart.event-handler.ts`):
+
+```typescript
+// Business logic
+export function createDecide() {
+  return (command: Command, state: State): Event => {
+    // Decision logic here
+  };
+}
+
+// State transitions
+export function createEvolve() {
+  return (state: State, event: Event): State => {
+    // Apply event to state
+  };
+}
+```
+
+**Read Model** (`cart.read-model.ts`):
+```typescript
+// Snapshot projection (reuses evolve!)
+export function cartsSnapshotProjection() {
+  return createSnapshotProjectionRegistry(
+    ["CartCreated", "ItemAdded", ...],
+    {
+      evolve: domainEvolve,  // Same function!
+      // ... configuration
+    }
+  );
+}
+
+// Consumer for production
+export function createCartsConsumer({ db, logger, partition }) {
+  const consumer = createKyselyEventStoreConsumer({...});
+  const registry = cartsSnapshotProjection();
+  
+  // Subscribe to all events
+  for (const [eventType, handlers] of Object.entries(registry)) {
+    consumer.subscribe(async (event) => {
+      await handler({ db, partition }, event);
+    }, eventType);
+  }
+  
+  return consumer;
+}
+```
+
+### Test Files
+
+**E2E Tests** (`cart.e2e.spec.ts`):
+- Use **Projection Runner** for fast, synchronous tests
+- Explicit `await project()` calls
+- Deterministic and easy to debug
+
+**Consumer Tests** (`cart.consumer.spec.ts`):
+- Use **Consumer** to test production behavior
+- Requires wait helpers for async processing
+- Validates real-world scenarios
+
+### Worker Process
+
+**Projection Worker** (`workers/projection-worker.ts`):
+- Runs consumers in background
+- One consumer per tenant/partition
+- Graceful shutdown handling
+
+## Running the Application
+
+### Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run migrations
+npm run migrate:latest
+
+# Start development server
+npm run dev
+
+# Run tests
+npm test
+```
+
+### Production
+
+```bash
+# Build
+npm run build
+
+# Run migrations
+npm run migrate:latest
+
+# Start projection workers
+node dist/workers/projection-worker.js
+
+# Start API server
+node dist/index.js
 ```
 
 ## Further Reading
 
+### Package Documentation
+- [Database Setup](../../../../package/docs/database-setup.md) - Schema and requirements
+- [Event Store](../../../../package/docs/event-store.md) - Core API
+- [Snapshot Projections](../../../../package/docs/snapshot-projections.md) - Recommended approach ⭐
+- [Consumer](../../../../package/docs/consumer.md) - Background processing
+- [Projection Runner](../../../../package/docs/projection-runner.md) - Testing tool
+
+### Example Documentation
+- [Consumer Usage](./consumer-usage.ts.example) - Production examples
+
+### External Resources
 - [Emmett Documentation](https://event-driven-io.github.io/emmett/)
 - [Event Sourcing Patterns](https://event-driven.io/)
-- [Package README](../../../package/README.md)
+
+## Tips
+
+1. **Use Snapshot Projections** - Simpler than traditional field-by-field projections
+2. **Test with Projection Runner** - Fast and deterministic
+3. **Run Consumer in Production** - Automatic background processing
+4. **One Consumer per Tenant** - Isolation and independent progress
+5. **Monitor Projection Lag** - Check `subscriptions` table regularly
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/wataruoguchi/poc-emmett/issues)
+- **Package Docs**: [../../../package/docs/](../../../../package/docs/)

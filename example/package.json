@@ -8,7 +8,7 @@
     "start": "node dist/index.js",
     "prepare": "husky",
     "pretest": "cd ../package && npm run build",
-    "test": "vitest run",
+    "test": "npm run type-check && vitest run",
     "t:c": "vitest src/modules/cart/tests",
     "t:g": "vitest src/modules/generator/tests",
     "test:coverage": "vitest run --coverage",
@@ -17,6 +17,7 @@
     "migrate:up": "kysely migrate:up && npm run codegen",
     "migrate:down": "kysely migrate:down && npm run codegen",
     "type-check": "tsc --noEmit",
+    "tc": "npm run type-check",
     "proj:worker": "tsx src/workers/projection-worker.ts"
   },
   "dependencies": {

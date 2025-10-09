@@ -117,13 +117,10 @@ function createCartApp({
   app.put("/api/tenants/:tenantId/carts/:id/checkout", async (c) => {
     const tenantId = c.req.param("tenantId");
     const id = c.req.param("id");
-    const body = await c.req.json();
     try {
       await cartService.checkout({
         tenantId,
         cartId: id,
-        orderId: body.orderId,
-        total: body.total,
       });
       return c.json({ message: "Checked out" }, 201);
     } catch (error) {

@@ -205,7 +205,7 @@ function createDecide(getContext: () => AppContext) {
   };
 }
 
-function createEvolve() {
+export function createEvolve() {
   /**
    * Calculate the next state based on the current state and the event.
    *
@@ -290,6 +290,7 @@ type DomainState =
   | UpdatedGenerator
   | DeletedGenerator
   | InitGenerator;
+export type GeneratorDomainState = DomainState;
 
 /**
  * ================================================
@@ -307,18 +308,15 @@ type GeneratorEventMeta = Pick<GeneratorEntity, "tenantId" | "generatorId"> & {
   version: number;
 };
 
-/**
- * These types are used when creating the event, as well as the read model.
- */
-export type GeneratorCreatedData = {
+type GeneratorCreatedData = {
   eventMeta: GeneratorEventMeta;
   eventData: Omit<GeneratorEntity, "tenantId" | "generatorId">;
 };
-export type GeneratorUpdatedData = {
+type GeneratorUpdatedData = {
   eventMeta: GeneratorEventMeta;
   eventData: Omit<GeneratorEntity, "tenantId" | "generatorId">;
 };
-export type GeneratorDeletedData = {
+type GeneratorDeletedData = {
   eventMeta: GeneratorEventMeta;
   eventData: null;
 };
@@ -327,6 +325,12 @@ type GeneratorCreated = Event<"GeneratorCreated", GeneratorCreatedData>;
 type GeneratorUpdated = Event<"GeneratorUpdated", GeneratorUpdatedData>;
 type GeneratorDeleted = Event<"GeneratorDeleted", GeneratorDeletedData>;
 type DomainEvent = GeneratorCreated | GeneratorUpdated | GeneratorDeleted;
+
+// Export discriminated union for projections (maintains type-data relationship)
+export type GeneratorDomainEvent =
+  | { type: "GeneratorCreated"; data: GeneratorCreatedData }
+  | { type: "GeneratorUpdated"; data: GeneratorUpdatedData }
+  | { type: "GeneratorDeleted"; data: GeneratorDeletedData };
 
 /**
  * ================================================

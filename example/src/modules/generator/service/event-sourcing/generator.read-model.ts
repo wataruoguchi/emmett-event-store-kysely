@@ -1,155 +1,95 @@
-import { createKyselyEventStoreConsumer } from "@wataruoguchi/emmett-event-store-kysely";
 import type {
-  ProjectionContext,
-  ProjectionEvent,
-  ProjectionRegistry,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+  Event,
+  ReadEvent,
+  ReadEventMetadataWithGlobalPosition,
+} from "@event-driven-io/emmett";
+import {
+  createKyselyEventStoreConsumer,
+  createSnapshotProjectionRegistry,
+  type ProjectionEvent,
+  type ProjectionHandler,
+  type ProjectionRegistry,
+} from "@wataruoguchi/emmett-event-store-kysely";
 import type { DatabaseExecutor } from "../../../shared/infra/db.js";
 import type { Logger } from "../../../shared/infra/logger.js";
-import type {
-  GeneratorCreatedData,
-  GeneratorUpdatedData,
+import {
+  createEvolve,
+  initialState as generatorInitialState,
+  type GeneratorDomainEvent,
+  type GeneratorDomainState,
 } from "./generator.event-handler.js";
 
-async function upsertIfNewer(
-  db: DatabaseExecutor,
-  event: ProjectionEvent,
-  apply: (db: DatabaseExecutor) => Promise<void>,
-) {
-  const existing = await db
-    .selectFrom("generators")
-    .select(["last_stream_position"])
-    .where("stream_id", "=", event.metadata.streamId)
-    .executeTakeFirst();
-
-  const lastPos = existing
-    ? BigInt(String(existing.last_stream_position))
-    : -1n;
-  if (event.metadata.streamPosition <= lastPos) return;
-
-  await apply(db);
-}
-
 /**
- * Projection registry that defines how generator events are transformed into read model updates.
+ * Snapshot-based projection for generators.
  *
- * This is the **definition** of projection logic - a mapping of event types to handler functions.
+ * Instead of manually mapping individual fields to columns, this stores the entire
+ * aggregate state in the `snapshot` JSONB column. This approach:
+ * - Allows reconstructing the full state without replaying all events
+ * - Is more flexible (no schema migrations for new fields)
+ * - Keeps the projection logic closer to the domain model
+ * - Uses the same evolve logic as the write model for consistency
  *
- * **When to use this:**
- * - In tests where you need on-demand, synchronous projection using `createProjectionRunner`
- * - For batch processing or manual projection triggers
- * - When you need fine-grained control over when events are projected
- *
- * **When NOT to use this:**
- * - For continuous background processing in production - use `createGeneratorsConsumer()` instead
- *
- * @returns ProjectionRegistry mapping event types to handlers
+ * @returns ProjectionRegistry mapping event types to snapshot-based handlers
  *
  * @example
  * ```typescript
- * // In tests: on-demand projection
- * const registry = generatorsProjection();
+ * // Use in tests or with projection runner
+ * const registry = generatorsSnapshotProjection();
  * const runner = createProjectionRunner({ db, readStream, registry });
  * await runner.projectEvents('subscription-id', 'stream-id', { partition: 'tenant-123' });
  * ```
  */
-export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
-  return {
-    GeneratorCreated: [
-      async (
-        { db, partition }: ProjectionContext<DatabaseExecutor>,
-        event: ProjectionEvent,
-      ) => {
-        const data = event.data as GeneratorCreatedData;
-        await upsertIfNewer(db, event, async (q) => {
-          await q
-            .insertInto("generators")
-            .values({
-              tenant_id: data.eventMeta.tenantId,
-              generator_id: data.eventMeta.generatorId,
-              name: data.eventData.name ?? "",
-              address: data.eventData.address ?? "",
-              generator_type: data.eventData.generatorType ?? "other",
-              notes: data.eventData.notes ?? null,
-              is_deleted: false,
-              stream_id: event.metadata.streamId,
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-              partition,
-            })
-            .onConflict((oc) =>
-              /**
-               * You may want to learn about upserts in PostgreSQL. "excluded" is a special keyword in PostgreSQL.
-               * https://neon.com/postgresql/postgresql-tutorial/postgresql-upsert#introduction-to-the-postgresql-upsert-statement
-               */
-              oc
-                .columns(["tenant_id", "generator_id", "partition"])
-                .doUpdateSet({
-                  name: (eb) => eb.ref("excluded.name"),
-                  address: (eb) => eb.ref("excluded.address"),
-                  generator_type: (eb) => eb.ref("excluded.generator_type"),
-                  notes: (eb) => eb.ref("excluded.notes"),
-                  is_deleted: (eb) => eb.ref("excluded.is_deleted"),
-                  last_stream_position: (eb) =>
-                    eb.ref("excluded.last_stream_position"),
-                  last_global_position: (eb) =>
-                    eb.ref("excluded.last_global_position"),
-                }),
-            )
-            .execute();
-        });
-      },
-    ],
-    GeneratorUpdated: [
-      async (
-        { db, partition }: ProjectionContext<DatabaseExecutor>,
-        event: ProjectionEvent,
-      ) => {
-        const data = event.data as GeneratorUpdatedData;
-        await upsertIfNewer(db, event, async (q) => {
-          await q
-            .updateTable("generators")
-            .set({
-              name: data.eventData.name ?? undefined,
-              address: data.eventData.address ?? undefined,
-              generator_type: data.eventData.generatorType ?? undefined,
-              notes: data.eventData.notes ?? undefined,
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-    GeneratorDeleted: [
-      async (
-        { db, partition }: ProjectionContext<DatabaseExecutor>,
-        event: ProjectionEvent,
-      ) => {
-        await upsertIfNewer(db, event, async (q) => {
-          await q
-            .updateTable("generators")
-            .set({
-              is_deleted: true,
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-  } satisfies ProjectionRegistry;
+export function generatorsSnapshotProjection(): ProjectionRegistry<DatabaseExecutor> {
+  // Reuse the exact same evolve logic from the domain event handler!
+  // This ensures consistency between write and read models.
+  const domainEvolve = createEvolve();
+
+  // Wrapper to adapt ProjectionEvent to the domain evolve function
+  // The discriminated union is preserved through the type system!
+  const evolve = (
+    state: GeneratorDomainState,
+    event: ProjectionEvent<GeneratorDomainEvent>,
+  ): GeneratorDomainState => {
+    // TypeScript now correctly narrows event.data based on event.type
+    return domainEvolve(state, event);
+  };
+
+  return createSnapshotProjectionRegistry<
+    GeneratorDomainState,
+    "generators",
+    GeneratorDomainEvent
+  >(["GeneratorCreated", "GeneratorUpdated", "GeneratorDeleted"], {
+    tableName: "generators",
+    primaryKeys: ["tenant_id", "generator_id", "partition"],
+    extractKeys: (
+      event: ProjectionEvent<GeneratorDomainEvent>,
+      partition: string,
+    ) => {
+      // TypeScript now knows that all GeneratorDomainEvent variants have eventMeta!
+      return {
+        tenant_id: event.data.eventMeta.tenantId,
+        generator_id: event.data.eventMeta.generatorId,
+        partition,
+      };
+    },
+    evolve,
+    initialState: generatorInitialState,
+    // Map snapshot state to denormalized columns for easier querying
+    mapToColumns: (state: GeneratorDomainState) => ({
+      name: state.data?.name ?? null,
+      address: state.data?.address ?? null,
+      generator_type: state.data?.generatorType ?? null,
+      notes: state.data?.notes ?? null,
+      is_deleted: state.status === "deleted",
+    }),
+  });
 }
 
 /**
- * Creates a consumer that automatically processes generator events and updates the read model.
+ * Creates a consumer that automatically processes generator events using snapshot-based projections.
  *
- * This is the **execution mechanism** - a running consumer that continuously polls for new events
- * and applies the projection handlers defined in `generatorsProjection()`.
+ * This consumer uses `generatorsSnapshotProjection()` which stores the full aggregate state
+ * in the `snapshot` JSONB column.
  *
  * **When to use this:**
  * - In production for continuous, automatic read model updates
@@ -157,14 +97,7 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
  * - For real-time or near-real-time read model consistency
  *
  * **When NOT to use this:**
- * - In tests where you need synchronous, on-demand projection - use `generatorsProjection()` with `createProjectionRunner` instead
- * - When you need fine-grained control over projection timing
- *
- * **Key Features:**
- * - Polls for new events at configurable intervals
- * - Tracks its position automatically (won't reprocess events)
- * - Processes events in batches for efficiency
- * - Supports graceful start/stop
+ * - In tests where you need synchronous, on-demand projection - use `generatorsSnapshotProjection()` with `createProjectionRunner` instead
  *
  * @param db - Database executor instance
  * @param logger - Logger instance
@@ -173,25 +106,6 @@ export function generatorsProjection(): ProjectionRegistry<DatabaseExecutor> {
  * @param batchSize - Optional batch size for processing events (default: 100)
  * @param pollingInterval - Optional polling interval in milliseconds (default: 1000)
  * @returns Consumer instance with start/stop methods
- *
- * @example
- * ```typescript
- * // In production: continuous background processing
- * const consumer = createGeneratorsConsumer({
- *   db,
- *   logger,
- *   partition: 'tenant-123',
- *   consumerName: 'generators-tenant-123',
- *   batchSize: 50,
- *   pollingInterval: 500
- * });
- *
- * // Start processing events
- * await consumer.start();
- *
- * // Later, when shutting down
- * await consumer.stop();
- * ```
  */
 export function createGeneratorsConsumer({
   db,
@@ -216,25 +130,30 @@ export function createGeneratorsConsumer({
     pollingInterval,
   });
 
-  // Subscribe to all generator events with the projection handlers
-  const registry = generatorsProjection();
+  // Use snapshot-based projection registry
+  const registry = generatorsSnapshotProjection();
 
   for (const [eventType, handlers] of Object.entries(registry)) {
-    for (const handler of handlers) {
-      consumer.subscribe(async (event) => {
-        // Convert consumer event to projection event format
-        const projectionEvent: ProjectionEvent = {
-          type: event.type,
-          data: event.data,
-          metadata: {
-            streamId: event.metadata.streamName,
-            streamPosition: event.metadata.streamPosition,
-            globalPosition: event.metadata.globalPosition,
-          },
-        };
+    for (const handler of handlers as ProjectionHandler<DatabaseExecutor>[]) {
+      consumer.subscribe(
+        async (
+          event: ReadEvent<Event, ReadEventMetadataWithGlobalPosition>,
+        ) => {
+          // Convert consumer event to projection event format
+          const projectionEvent: ProjectionEvent<GeneratorDomainEvent> = {
+            type: event.type,
+            data: event.data,
+            metadata: {
+              streamId: event.metadata.streamName,
+              streamPosition: event.metadata.streamPosition,
+              globalPosition: event.metadata.globalPosition,
+            },
+          } as ProjectionEvent<GeneratorDomainEvent>;
 
-        await handler({ db, partition }, projectionEvent);
-      }, eventType);
+          await handler({ db, partition }, projectionEvent);
+        },
+        eventType,
+      );
     }
   }
 

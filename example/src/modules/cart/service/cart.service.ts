@@ -9,19 +9,23 @@ type Dependencies = {
   findTenantByIdService: TenantService["get"];
 };
 
-type GetCart = ReturnType<typeof createGetCartService>;
 export type CartService = ReturnType<typeof createCartServiceFactory>;
 
 export function createCartServiceFactory(deps: Dependencies) {
-  const get: GetCart = createGetCartService(deps);
+  /**
+   * The Writes services should not check whether the cart exists in the read model.
+   * They should not depend on the read model.
+   *
+   * We use assertions in `createDecide` in `cart.event-handler.ts` to ensure that the cart exists in the write model.
+   */
   return {
     create: createCreateCartService(deps),
-    addItem: createAddItemService({ get }, deps),
-    removeItem: createRemoveItemService({ get }, deps),
-    empty: createEmptyCartService({ get }, deps),
-    checkout: createCheckoutCartService({ get }, deps),
-    cancel: createCancelCartService({ get }, deps),
-    get,
+    addItem: createAddItemService(deps),
+    removeItem: createRemoveItemService(deps),
+    empty: createEmptyCartService(deps),
+    checkout: createCheckoutCartService(deps),
+    cancel: createCancelCartService(deps),
+    get: createGetCartService(deps),
     getAll: createGetCartsService(deps),
   };
 }
@@ -46,13 +50,10 @@ function createCreateCartService({
   };
 }
 
-function createAddItemService(
-  { get }: { get: GetCart },
-  {
-    handler,
-    findTenantByIdService,
-  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
-) {
+function createAddItemService({
+  handler,
+  findTenantByIdService,
+}: Pick<Dependencies, "handler" | "findTenantByIdService">) {
   return async (input: unknown) => {
     const schema = CartEntitySchema.pick({
       tenantId: true,
@@ -63,7 +64,6 @@ function createAddItemService(
     const parsed = schema.parse(input);
     const tenant = await findTenantByIdService(parsed.tenantId);
     if (!tenant) throw new Error("Tenant not found");
-    await get({ tenantId: parsed.tenantId, cartId: parsed.cartId });
     return await handler.addItem(parsed.cartId, {
       tenantId: parsed.tenantId,
       item: parsed.item,
@@ -71,13 +71,10 @@ function createAddItemService(
   };
 }
 
-function createRemoveItemService(
-  { get }: { get: GetCart },
-  {
-    handler,
-    findTenantByIdService,
-  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
-) {
+function createRemoveItemService({
+  handler,
+  findTenantByIdService,
+}: Pick<Dependencies, "handler" | "findTenantByIdService">) {
   return async (input: unknown) => {
     const schema = CartEntitySchema.pick({
       tenantId: true,
@@ -89,7 +86,6 @@ function createRemoveItemService(
     const parsed = schema.parse(input);
     const tenant = await findTenantByIdService(parsed.tenantId);
     if (!tenant) throw new Error("Tenant not found");
-    await get({ tenantId: parsed.tenantId, cartId: parsed.cartId });
     return await handler.removeItem(parsed.cartId, {
       tenantId: parsed.tenantId,
       sku: parsed.sku,
@@ -98,57 +94,41 @@ function createRemoveItemService(
   };
 }
 
-function createEmptyCartService(
-  { get }: { get: GetCart },
-  {
-    handler,
-    findTenantByIdService,
-  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
-) {
+function createEmptyCartService({
+  handler,
+  findTenantByIdService,
+}: Pick<Dependencies, "handler" | "findTenantByIdService">) {
   return async (input: unknown) => {
     const schema = CartEntitySchema.pick({ tenantId: true, cartId: true });
     const parsed = schema.parse(input);
     const tenant = await findTenantByIdService(parsed.tenantId);
     if (!tenant) throw new Error("Tenant not found");
-    await get({ tenantId: parsed.tenantId, cartId: parsed.cartId });
     return await handler.empty(parsed.cartId, { tenantId: parsed.tenantId });
   };
 }
 
-function createCheckoutCartService(
-  { get }: { get: GetCart },
-  {
-    handler,
-    findTenantByIdService,
-  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
-) {
+function createCheckoutCartService({
+  handler,
+  findTenantByIdService,
+}: Pick<Dependencies, "handler" | "findTenantByIdService">) {
   return async (input: unknown) => {
     const schema = CartEntitySchema.pick({
       tenantId: true,
       cartId: true,
-    }).extend({
-      orderId: CartEntitySchema.shape.cartId,
-      total: CartItemSchema.shape.unitPrice,
     });
     const parsed = schema.parse(input);
     const tenant = await findTenantByIdService(parsed.tenantId);
     if (!tenant) throw new Error("Tenant not found");
-    await get({ tenantId: parsed.tenantId, cartId: parsed.cartId });
     return await handler.checkout(parsed.cartId, {
       tenantId: parsed.tenantId,
-      orderId: parsed.orderId,
-      total: parsed.total,
     });
   };
 }
 
-function createCancelCartService(
-  { get }: { get: GetCart },
-  {
-    handler,
-    findTenantByIdService,
-  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
-) {
+function createCancelCartService({
+  handler,
+  findTenantByIdService,
+}: Pick<Dependencies, "handler" | "findTenantByIdService">) {
   return async (input: unknown) => {
     const schema = CartEntitySchema.pick({
       tenantId: true,
@@ -159,7 +139,6 @@ function createCancelCartService(
     const parsed = schema.parse(input);
     const tenant = await findTenantByIdService(parsed.tenantId);
     if (!tenant) throw new Error("Tenant not found");
-    await get({ tenantId: parsed.tenantId, cartId: parsed.cartId });
     return await handler.cancel(parsed.cartId, {
       tenantId: parsed.tenantId,
       reason: parsed.reason,

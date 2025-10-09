@@ -1,8 +1,9 @@
 /**
  * Example: Using Event Store Consumers for Read Model Projections
  * 
- * This demonstrates how to use the integrated consumers to automatically
- * keep read models up-to-date as events are written to the event store.
+ * This demonstrates how to use consumers to automatically keep read models
+ * up-to-date as events are written to the event store. Consumers continuously
+ * poll for new events and apply snapshot projections in the background.
  */
 
 import type { DatabaseExecutor } from "../modules/shared/infra/db.js";
@@ -12,6 +13,10 @@ import { createGeneratorsConsumer } from "../modules/generator/service/event-sou
 
 /**
  * Example 1: Start a single cart consumer for a specific tenant
+ * 
+ * This uses the snapshot projection approach where the complete aggregate
+ * state is stored in a JSONB column using the same evolve function as the
+ * write model.
  */
 export async function startCartConsumer({
   db,
@@ -23,19 +28,20 @@ export async function startCartConsumer({
   tenantId: string;
 }) {
   // Create the consumer for the tenant's partition
+  // The consumer uses cartsSnapshotProjection() internally
   const consumer = createCartsConsumer({
     db,
     logger,
     partition: tenantId,
     consumerName: `carts-${tenantId}`,
-    batchSize: 50,
-    pollingInterval: 500, // Poll every 500ms
+    batchSize: 100,         // Events per batch
+    pollingInterval: 1000,  // Poll every 1 second
   });
 
-  // Start processing events
+  // Start processing events continuously
   await consumer.start();
 
-  logger.info({ tenantId }, "Cart consumer started");
+  logger.info({ tenantId }, "Cart consumer started with snapshot projections");
 
   // Return the consumer so it can be stopped later
   return consumer;
@@ -43,6 +49,9 @@ export async function startCartConsumer({
 
 /**
  * Example 2: Start multiple consumers for different tenants
+ * 
+ * In a multi-tenant system, you typically run one consumer per tenant
+ * to process their events independently.
  */
 export async function startMultiTenantConsumers({
   db,
@@ -55,31 +64,41 @@ export async function startMultiTenantConsumers({
 }) {
   const consumers = [];
 
-  // Start a cart consumer for each tenant
+  // Start a cart and generator consumer for each tenant
   for (const tenantId of tenantIds) {
+    // Cart consumer (uses snapshot projection)
     const cartConsumer = createCartsConsumer({
       db,
       logger,
       partition: tenantId,
       consumerName: `carts-${tenantId}`,
+      batchSize: 100,
+      pollingInterval: 1000,
     });
 
+    // Generator consumer (uses snapshot projection)
     const generatorConsumer = createGeneratorsConsumer({
       db,
       logger,
       partition: tenantId,
       consumerName: `generators-${tenantId}`,
+      batchSize: 100,
+      pollingInterval: 1000,
     });
 
     await cartConsumer.start();
     await generatorConsumer.start();
 
-    consumers.push({ cartConsumer, generatorConsumer });
+    consumers.push({ 
+      tenantId,
+      cartConsumer, 
+      generatorConsumer 
+    });
   }
 
   logger.info(
     { tenantCount: tenantIds.length },
-    "All tenant consumers started",
+    "All tenant consumers started with snapshot projections",
   );
 
   return consumers;
@@ -87,27 +106,43 @@ export async function startMultiTenantConsumers({
 
 /**
  * Example 3: Graceful shutdown of consumers
+ * 
+ * Always stop consumers gracefully to ensure:
+ * - Current batch completes
+ * - Checkpoint is saved
+ * - No events are lost
  */
 export async function stopAllConsumers({
   consumers,
   logger,
 }: {
   consumers: Array<{
+    tenantId: string;
     cartConsumer: { stop: () => Promise<void> };
     generatorConsumer: { stop: () => Promise<void> };
   }>;
   logger: Logger;
 }) {
-  for (const { cartConsumer, generatorConsumer } of consumers) {
-    await cartConsumer.stop();
-    await generatorConsumer.stop();
+  logger.info("Stopping all consumers gracefully...");
+
+  for (const { tenantId, cartConsumer, generatorConsumer } of consumers) {
+    try {
+      await cartConsumer.stop();
+      await generatorConsumer.stop();
+      logger.info({ tenantId }, "Tenant consumers stopped");
+    } catch (error) {
+      logger.error({ tenantId, error }, "Error stopping consumer");
+    }
   }
 
   logger.info({ count: consumers.length }, "All consumers stopped");
 }
 
 /**
- * Example 4: Using consumers in an application lifecycle
+ * Example 4: Consumer Manager with Dynamic Tenant Management
+ * 
+ * This class manages consumers dynamically as tenants are added/removed.
+ * Useful for multi-tenant SaaS applications.
  */
 export class ConsumerManager {
   private consumers: Map<
@@ -123,12 +158,16 @@ export class ConsumerManager {
     private logger: Logger,
   ) {}
 
-  async addTenant(tenantId: string) {
+  /**
+   * Add a new tenant and start its consumers
+   */
+  async addTenant(tenantId: string): Promise<void> {
     if (this.consumers.has(tenantId)) {
       this.logger.warn({ tenantId }, "Consumer already exists for tenant");
       return;
     }
 
+    // Create consumers with snapshot projections
     const cartConsumer = createCartsConsumer({
       db: this.db,
       logger: this.logger,
@@ -143,6 +182,7 @@ export class ConsumerManager {
       consumerName: `generators-${tenantId}`,
     });
 
+    // Start both consumers
     await cartConsumer.start();
     await generatorConsumer.start();
 
@@ -151,7 +191,10 @@ export class ConsumerManager {
     this.logger.info({ tenantId }, "Consumers started for tenant");
   }
 
-  async removeTenant(tenantId: string) {
+  /**
+   * Remove a tenant and stop its consumers
+   */
+  async removeTenant(tenantId: string): Promise<void> {
     const consumer = this.consumers.get(tenantId);
     if (!consumer) {
       this.logger.warn({ tenantId }, "No consumer found for tenant");
@@ -166,8 +209,26 @@ export class ConsumerManager {
     this.logger.info({ tenantId }, "Consumers stopped for tenant");
   }
 
-  async shutdown() {
+  /**
+   * Get status of all consumers
+   */
+  getStatus() {
+    return {
+      totalConsumers: this.consumers.size,
+      tenants: Array.from(this.consumers.keys()),
+    };
+  }
+
+  /**
+   * Shutdown all consumers
+   */
+  async shutdown(): Promise<void> {
     const tenantIds = Array.from(this.consumers.keys());
+
+    this.logger.info(
+      { tenantCount: tenantIds.length },
+      "Shutting down all consumers",
+    );
 
     for (const tenantId of tenantIds) {
       await this.removeTenant(tenantId);
@@ -178,7 +239,13 @@ export class ConsumerManager {
 }
 
 /**
- * Example 5: Integration with application startup
+ * Example 5: Production Application Bootstrap
+ * 
+ * This shows how to integrate consumers into your application startup.
+ * Includes:
+ * - Loading active tenants from database
+ * - Starting consumers for each tenant
+ * - Graceful shutdown handling
  */
 export async function bootstrapConsumers({
   db,
@@ -187,6 +254,8 @@ export async function bootstrapConsumers({
   db: DatabaseExecutor;
   logger: Logger;
 }) {
+  logger.info("Bootstrapping consumers with snapshot projections...");
+
   // Get all active tenants from the database
   const tenants = await db
     .selectFrom("tenants")
@@ -194,28 +263,149 @@ export async function bootstrapConsumers({
     .where("is_active", "=", true)
     .execute();
 
+  logger.info({ tenantCount: tenants.length }, "Found active tenants");
+
+  // Create manager
   const manager = new ConsumerManager(db, logger);
 
   // Start consumers for all active tenants
   for (const tenant of tenants) {
-    await manager.addTenant(tenant.tenant_id);
+    try {
+      await manager.addTenant(tenant.tenant_id);
+    } catch (error) {
+      logger.error(
+        { tenantId: tenant.tenant_id, error },
+        "Failed to start consumer for tenant",
+      );
+    }
   }
 
   // Set up graceful shutdown
-  process.on("SIGTERM", async () => {
-    logger.info("SIGTERM received, shutting down consumers");
+  const shutdown = async (signal: string) => {
+    logger.info({ signal }, "Received shutdown signal");
     await manager.shutdown();
+    await db.destroy();
     process.exit(0);
-  });
+  };
 
-  process.on("SIGINT", async () => {
-    logger.info("SIGINT received, shutting down consumers");
-    await manager.shutdown();
-    process.exit(0);
-  });
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 
-  logger.info({ tenantCount: tenants.length }, "Consumer bootstrap complete");
+  logger.info(
+    { status: manager.getStatus() },
+    "Consumer bootstrap complete",
+  );
 
   return manager;
 }
 
+/**
+ * Example 6: Health Check for Consumers
+ * 
+ * Monitor consumer health by checking subscription lag.
+ */
+export async function getConsumerHealth({
+  db,
+  consumerName,
+  partition,
+}: {
+  db: DatabaseExecutor;
+  consumerName: string;
+  partition: string;
+}) {
+  // Get consumer position
+  const subscription = await db
+    .selectFrom("subscriptions")
+    .select(["last_processed_position", "updated_at"])
+    .where("subscription_id", "=", consumerName)
+    .where("partition", "=", partition)
+    .executeTakeFirst();
+
+  if (!subscription) {
+    return {
+      status: "not_started",
+      lag: null,
+      lastUpdate: null,
+    };
+  }
+
+  // Get latest event position
+  const latestEvent = await db
+    .selectFrom("messages")
+    .select(["global_position"])
+    .where("stream_id", "like", `%${partition}%`)
+    .orderBy("global_position", "desc")
+    .limit(1)
+    .executeTakeFirst();
+
+  const lag = latestEvent
+    ? Number(latestEvent.global_position) - 
+      Number(subscription.last_processed_position)
+    : 0;
+
+  return {
+    status: lag === 0 ? "up_to_date" : "processing",
+    lag,
+    lastUpdate: subscription.updated_at,
+    position: subscription.last_processed_position,
+  };
+}
+
+/**
+ * Example 7: Usage in Worker Process
+ * 
+ * This is what your projection-worker.ts might look like.
+ */
+export async function main() {
+  // Setup (typically done in your app initialization)
+  const db = createDatabaseConnection();
+  const logger = createLogger();
+
+  try {
+    // Bootstrap consumers
+    const manager = await bootstrapConsumers({ db, logger });
+
+    // Log status periodically
+    setInterval(() => {
+      const status = manager.getStatus();
+      logger.info({ status }, "Consumer status");
+    }, 60000); // Every minute
+
+    logger.info("Projection worker running");
+
+    // Keep process alive
+    await new Promise(() => {}); // Never resolves
+  } catch (error) {
+    logger.error({ error }, "Fatal error in projection worker");
+    process.exit(1);
+  }
+}
+
+// Run if executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(console.error);
+}
+
+/**
+ * Key Points:
+ * 
+ * 1. Consumers use snapshot projections internally
+ *    - Stores complete aggregate state in JSONB
+ *    - Uses same evolve function as write model
+ *    - Optionally denormalizes columns for queries
+ * 
+ * 2. One consumer per tenant/partition
+ *    - Independent progress tracking
+ *    - Isolated failure domains
+ *    - Scalable architecture
+ * 
+ * 3. Always handle graceful shutdown
+ *    - Stop consumers before exit
+ *    - Close database connections
+ *    - Ensure checkpoints are saved
+ * 
+ * 4. Monitor consumer health
+ *    - Track lag between write and read
+ *    - Alert on excessive lag
+ *    - Check last update times
+ */

@@ -57,11 +57,19 @@ export function createEmmettStyleCartService({
         items: Array<{ sku: string; quantity: number; price: number }>;
       };
 
+      // Define event types
+      type CartEvent =
+        | { type: "CartCreated"; data: { cartId: string } }
+        | {
+            type: "ItemAdded";
+            data: { sku: string; quantity: number; price: number };
+          };
+
       // First, aggregate the current state
-      const { state } = await eventStore.aggregateStream<CartState, any>(
+      const { state } = await eventStore.aggregateStream<CartState, CartEvent>(
         cartId,
         {
-          evolve: (state: CartState, event: any) => {
+          evolve: (state: CartState, event: CartEvent) => {
             if (event.type === "CartCreated") {
               return { ...state, cartId: event.data.cartId, items: [] };
             }

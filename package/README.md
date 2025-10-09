@@ -4,210 +4,122 @@ A Kysely-based event store implementation for [Emmett](https://github.com/event-
 
 ## Features
 
-- **Event Store**: Emmett event store implementation with Kysely
-- **Projections**: Read model projections with automatic event processing
+- **Event Store** - Full event sourcing with Kysely and PostgreSQL
+- **Snapshot Projections** - Recommended approach for read models
+- **Event Consumer** - Continuous background event processing
+- **Type Safety** - Full TypeScript support with discriminated unions
+- **Multi-Tenancy** - Built-in partition support
 
 ## Installation
 
 ```bash
-npm install @wataruoguchi/emmett-event-store-kysely @event-driven-io/emmett kysely
+npm install @wataruoguchi/emmett-event-store-kysely @event-driven-io/emmett kysely pg
 ```
 
-## Database Setup
+## Quick Start
 
-First, you need to set up the event store tables in your PostgreSQL database. You can achieve this with [the Kysely migration file](https://github.com/wataruoguchi/poc-emmett/blob/main/package/1758758113676_event_sourcing_migration_example.ts)
+### 1. Database Setup
 
-## Basic Usage
-
-You can find [the complete working example](https://github.com/wataruoguchi/poc-emmett/tree/main/example). The following are some snippets.
-
-### 1. Setting up the Event Store
+Set up the required PostgreSQL tables using [our migration example](./database/migrations/1758758113676_event_sourcing_migration_example.ts):
 
 ```typescript
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
-import { Kysely, PostgresDialect } from "kysely";
-import { Pool } from "pg";
+import { Kysely } from "kysely";
 
-// Set up your Kysely database connection
-const db = new Kysely<YourDatabaseSchema>({
+// Required tables: messages, streams, subscriptions
+// See docs/database-setup.md for details
+```
+
+### 2. Create Event Store
+
+```typescript
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import { Kysely, PostgresDialect } from "kysely";
+
+const db = new Kysely({
   dialect: new PostgresDialect({
-    pool: new Pool({
-      connectionString: process.env.DATABASE_URL,
-    }),
+    pool: new Pool({ connectionString: process.env.DATABASE_URL }),
   }),
 });
 
-// Create the event store
-const eventStore = createEventStore({ db, logger });
-```
-
-### 2. Using the Event Store with Emmett
-
-```typescript
-import { DeciderCommandHandler } from "@event-driven-io/emmett";
-import type { EventStore } from "@wataruoguchi/emmett-event-store-kysely";
-
-// Define your domain events and commands
-type CreateCartCommand = {
-  type: "CreateCart";
-  data: { tenantId: string; cartId: string; currency: string };
-};
-
-type CartCreatedEvent = {
-  type: "CartCreated";
-  data: { tenantId: string; cartId: string; currency: string };
-};
-
-// Create your event handler
-export function cartEventHandler({
-  eventStore,
-  getContext,
-}: {
-  eventStore: EventStore;
-  getContext: () => AppContext;
-}) {
-  const handler = DeciderCommandHandler({
-    decide: createDecide(getContext),
-    evolve: createEvolve(),
-    initialState,
-  });
-
-  return {
-    create: (cartId: string, data: CreateCartCommand["data"]) =>
-      handler(
-        eventStore,
-        cartId,
-        { type: "CreateCart", data },
-        { partition: data.tenantId, streamType: "cart" }
-      ),
-  };
-}
-
-// Use in your service
-const cartService = createCartService({
-  eventStore,
-  getContext,
+const eventStore = getKyselyEventStore({ 
+  db, 
+  logger: console,
 });
 ```
 
-## Projections (Read Models)
+### 3. Write Events & Commands & Business Logic & State
 
-### 1. Creating a Projection
+Please read <https://event-driven-io.github.io/emmett/getting-started.html>
+
+- [Events](https://event-driven-io.github.io/emmett/getting-started.html#events)
+- [Commands](https://event-driven-io.github.io/emmett/getting-started.html#commands)
+- [Business logic and decisions](https://event-driven-io.github.io/emmett/getting-started.html#business-logic-and-decisions)
+- [Building state from events](https://event-driven-io.github.io/emmett/getting-started.html#building-state-from-events)
+
+### 4. Build Read Models
+
+This package supports "Snapshot Projections".
 
 ```typescript
-import type {
-  ProjectionEvent,
-  ProjectionRegistry,
+import { 
+  createSnapshotProjectionRegistry 
 } from "@wataruoguchi/emmett-event-store-kysely/projections";
 
-export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
-  return {
-    CartCreated: async (db, event) => {
-      await db
-        .insertInto("carts")
-        .values({
-          stream_id: event.metadata.streamId,
-          tenant_id: event.data.tenantId,
-          cart_id: event.data.cartId,
-          currency: event.data.currency,
-          items: JSON.stringify([]),
-          total: 0,
-          last_stream_position: event.metadata.streamPosition,
-        })
-        .execute();
-    },
-    ItemAddedToCart: async (db, event) => {
-      // Update cart with new item
-      await db
-        .updateTable("carts")
-        .set({
-          items: JSON.stringify([...existingItems, event.data.item]),
-          total: newTotal,
-          last_stream_position: event.metadata.streamPosition,
-        })
-        .where("stream_id", "=", event.metadata.streamId)
-        .execute();
-    },
-  };
-}
+// Reuse your write model's evolve function!
+const registry = createSnapshotProjectionRegistry(
+  ["CartCreated", "ItemAdded", "CartCheckedOut"],
+  {
+    tableName: "carts",
+    primaryKeys: ["tenant_id", "cart_id", "partition"],
+    extractKeys: (event, partition) => ({
+      tenant_id: event.data.eventMeta.tenantId,
+      cart_id: event.data.eventMeta.cartId,
+      partition,
+    }),
+    evolve: domainEvolve,      // Reuse from write model!
+    initialState,
+    mapToColumns: (state) => ({ // Optional: denormalize for queries
+      currency: state.currency,
+      total: state.status === "checkedOut" ? state.total : null,
+    }),
+  }
+);
 ```
 
-### 2. Running Projections
+### 5. Process Events and Update Read Model
 
 ```typescript
-import {
-  createProjectionRegistry,
-  createProjectionRunner,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
-import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
+import { createProjectionRunner } from "@wataruoguchi/emmett-event-store-kysely/projections";
 
-// Set up projection runner
-const readStream = createReadStream({ db, logger });
-const registry = createProjectionRegistry(cartsProjection());
-const runner = createProjectionRunner({
-  db,
-  readStream,
+const runner = createProjectionRunner({ 
+  db, 
+  readStream: eventStore.readStream, 
   registry,
 });
 
-// Project events for a specific stream
-await runner.projectEvents("carts-read-model", "cart-123", {
-  partition: "tenant-456",
-  batchSize: 100,
+await runner.projectEvents("subscription-id", "cart-123", {
+  partition: "tenant-456"
 });
 ```
 
-### 3. Projection Worker
+See [Snapshot Projections documentation](./docs/snapshot-projections.md) for details.
 
-Create a worker to continuously process projections:
+## Documentation
 
-```typescript
-#!/usr/bin/env node
-import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
-import {
-  createProjectionRegistry,
-  createProjectionRunner,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+📚 **[Complete Documentation](./docs/README.md)**
 
-async function main(partition: string) {
-  const db = getDb();
-  const readStream = createReadStream({ db, logger });
-  const registry = createProjectionRegistry(cartsProjection());
-  const runner = createProjectionRunner({
-    db,
-    readStream,
-    registry,
-  });
+### Core Guides
 
-  const subscriptionId = "carts-read-model";
-  const batchSize = 200;
-  const pollIntervalMs = 1000;
+- [Database Setup](./docs/database-setup.md) - PostgreSQL schema and requirements
+- [Event Store](./docs/event-store.md) - Core event store API
+- [Snapshot Projections](./docs/snapshot-projections.md) - Build read models (recommended) ⭐
+- [Event Consumer](./docs/consumer.md) - Continuous background processing
+- [Projection Runner](./docs/projection-runner.md) - On-demand processing for tests
 
-  while (true) {
-    // Get streams for this partition
-    const streams = await db
-      .selectFrom("streams")
-      .select(["stream_id"])
-      .where("is_archived", "=", false)
-      .where("partition", "=", partition)
-      .where("stream_type", "=", "cart")
-      .execute();
+### Examples
 
-    // Process each stream
-    for (const stream of streams) {
-      await runner.projectEvents(subscriptionId, stream.stream_id, {
-        partition,
-        batchSize,
-      });
-    }
-
-    await new Promise((r) => setTimeout(r, pollIntervalMs));
-  }
-}
-
-// Run with: node projection-worker.js tenant-123
-main(process.argv[2]);
-```
+- [Working Example](../example/) - Complete application with carts and generators
+- [Migration Example](./database/migrations/1758758113676_event_sourcing_migration_example.ts) - Database setup
 
 ## License
 
@@ -215,4 +127,4 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please see our [GitHub repository](https://github.com/wataruoguchi/poc-emmett) for issues and PRs.

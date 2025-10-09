@@ -1,8 +1,8 @@
-import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+  getKyselyEventStore,
+} from "@wataruoguchi/emmett-event-store-kysely";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import z from "zod";
@@ -12,7 +12,7 @@ import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
 import { createTenantService } from "../../tenant/tenant.index.js";
 import { createCartApp, createCartService } from "../cart.index.js";
-import { cartsProjection } from "../service/event-sourcing/cart.read-model.js";
+import { cartsSnapshotProjection } from "../service/event-sourcing/cart.read-model.js";
 
 describe("Cart Integration", () => {
   const TEST_DB_NAME = "cart_e2e_test";
@@ -38,7 +38,7 @@ describe("Cart Integration", () => {
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     const { readStream } = getKyselyEventStore({ db, logger });
-    const registry = createProjectionRegistry(cartsProjection());
+    const registry = createProjectionRegistry(cartsSnapshotProjection());
     const runner = createProjectionRunner({
       db,
       readStream,
@@ -143,7 +143,6 @@ describe("Cart Integration", () => {
         `/api/tenants/${tenantId}/carts/${cartId}/checkout`,
         {
           method: "PUT",
-          body: JSON.stringify({ orderId: crypto.randomUUID(), total: 25 }),
         },
       );
       expect(response.status).toBe(201);
@@ -251,7 +250,6 @@ describe("Cart Integration", () => {
         `/api/tenants/${tenantId}/carts/${cartId}/checkout`,
         {
           method: "PUT",
-          body: JSON.stringify({ orderId: crypto.randomUUID(), total: 40 }),
         },
       );
       expect(checkout.status).toBe(201);
@@ -265,6 +263,8 @@ describe("Cart Integration", () => {
           "cart_id",
           "currency",
           "items_json",
+          "total",
+          "order_id",
           "is_checked_out",
           "is_cancelled",
         ])
@@ -284,6 +284,9 @@ describe("Cart Integration", () => {
       expect(sku456?.quantity).toBe(1);
       expect(sku456?.unitPrice).toBe(15);
       expect(row.currency).toBe("USD");
+      expect(row.total).toBe(40);
+      expect(typeof row.order_id).toBe("string");
+      expect(row.order_id!.length).toBeGreaterThan(0);
       expect(row.is_checked_out).toBe(true);
       expect(row.is_cancelled).toBe(false);
     });

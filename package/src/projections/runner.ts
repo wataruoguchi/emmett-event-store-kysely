@@ -127,15 +127,16 @@ export function createProjectionRunner<
         );
         continue;
       }
-      const projectionEvent: ProjectionEvent = {
-        type: ev.type,
-        data: ev.data,
-        metadata: {
-          streamId: ev.metadata.streamId,
-          streamPosition: ev.metadata.streamPosition,
-          globalPosition: ev.metadata.globalPosition,
-        },
-      };
+      const projectionEvent: ProjectionEvent<{ type: string; data: unknown }> =
+        {
+          type: ev.type,
+          data: ev.data,
+          metadata: {
+            streamId: ev.metadata.streamId,
+            streamPosition: ev.metadata.streamPosition,
+            globalPosition: ev.metadata.globalPosition,
+          },
+        };
       for (const handler of handlers) {
         await handler({ db, partition }, projectionEvent);
       }

@@ -14,22 +14,17 @@
   "homepage": "https://github.com/wataruoguchi/poc-emmett",
   "bugs": "https://github.com/wataruoguchi/poc-emmett/issues",
   "type": "module",
-  "main": "dist/event-store/index.js",
-  "module": "dist/event-store/index.js",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/types.d.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "types": "./dist/event-store/index.d.ts",
-      "import": "./dist/event-store/index.js",
-      "require": "./dist/event-store/index.cjs"
-    },
-    "./event-store": {
-      "types": "./dist/event-store/index.d.ts",
-      "import": "./dist/event-store/index.js",
-      "require": "./dist/event-store/index.cjs"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./projections": {
       "types": "./dist/projections/index.d.ts",
@@ -38,9 +33,9 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && tsup src/event-store/index.ts src/projections/index.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && tsup src/index.ts src/projections/index.ts",
     "type-check": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "npm run type-check && vitest run",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run"
   },
