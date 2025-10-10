@@ -20,13 +20,13 @@ npm install @wataruoguchi/emmett-event-store-kysely @event-driven-io/emmett kyse
 
 ### 1. Database Setup
 
-Set up the required PostgreSQL tables using [our migration example](./database/migrations/1758758113676_event_sourcing_migration_example.ts):
+Set up the required PostgreSQL tables using [our migration example](https://github.com/wataruoguchi/poc-emmett/blob/main/package/database/migrations/1758758113676_event_sourcing_migration_example.ts):
 
 ```typescript
 import { Kysely } from "kysely";
 
 // Required tables: messages, streams, subscriptions
-// See docs/database-setup.md for details
+// See https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/database-setup.md for details
 ```
 
 ### 2. Create Event Store
@@ -102,24 +102,24 @@ await runner.projectEvents("subscription-id", "cart-123", {
 });
 ```
 
-See [Snapshot Projections documentation](./docs/snapshot-projections.md) for details.
+See [Snapshot Projections documentation](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/snapshot-projections.md) for details.
 
 ## Documentation
 
-📚 **[Complete Documentation](./docs/README.md)**
+📚 **[Complete Documentation](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/README.md)**
 
 ### Core Guides
 
-- [Database Setup](./docs/database-setup.md) - PostgreSQL schema and requirements
-- [Event Store](./docs/event-store.md) - Core event store API
-- [Snapshot Projections](./docs/snapshot-projections.md) - Build read models (recommended) ⭐
-- [Event Consumer](./docs/consumer.md) - Continuous background processing
-- [Projection Runner](./docs/projection-runner.md) - On-demand processing for tests
+- [Database Setup](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/database-setup.md) - PostgreSQL schema and requirements
+- [Event Store](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/event-store.md) - Core event store API
+- [Snapshot Projections](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/snapshot-projections.md) - Build read models (recommended) ⭐
+- [Event Consumer](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/consumer.md) - Continuous background processing
+- [Projection Runner](https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/projection-runner.md) - On-demand processing for tests
 
 ### Examples
 
-- [Working Example](../example/) - Complete application with carts and generators
-- [Migration Example](./database/migrations/1758758113676_event_sourcing_migration_example.ts) - Database setup
+- [Working Example](https://github.com/wataruoguchi/poc-emmett/tree/main/example/) - Complete application with carts and generators
+- [Migration Example](https://github.com/wataruoguchi/poc-emmett/blob/main/package/database/migrations/1758758113676_event_sourcing_migration_example.ts) - Database setup
 
 ## License
 
