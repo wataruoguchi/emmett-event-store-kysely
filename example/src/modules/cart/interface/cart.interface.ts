@@ -1,4 +1,4 @@
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import { Hono } from "hono";
 import {
   createContextMiddleware,
@@ -18,7 +18,7 @@ export function createCartService(
   { tenantService }: { tenantService: TenantService },
   { db, logger }: { db: DatabaseExecutor; logger: Logger },
 ): CartService {
-  const eventStore = createEventStore({ db, logger });
+  const eventStore = getKyselyEventStore({ db, logger });
   return createCartServiceFactory({
     repository: createCartRepository({ db, logger }),
     findTenantByIdService: tenantService.get,
@@ -117,13 +117,10 @@ function createCartApp({
   app.put("/api/tenants/:tenantId/carts/:id/checkout", async (c) => {
     const tenantId = c.req.param("tenantId");
     const id = c.req.param("id");
-    const body = await c.req.json();
     try {
       await cartService.checkout({
         tenantId,
         cartId: id,
-        orderId: body.orderId,
-        total: body.total,
       });
       return c.json({ message: "Checked out" }, 201);
     } catch (error) {

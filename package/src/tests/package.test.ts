@@ -56,7 +56,8 @@ describe("Event Sourcing Package", () => {
 
   describe("Type System", () => {
     it("should have correct ProjectionEvent structure", () => {
-      const event: ProjectionEvent = {
+      type TestEvent = { type: "TestEvent"; data: { test: string } };
+      const event: ProjectionEvent<TestEvent> = {
         type: "TestEvent",
         data: { test: "data" },
         metadata: {
@@ -85,7 +86,11 @@ describe("Event Sourcing Package", () => {
     });
 
     it("should handle ProjectionHandler function signature", () => {
-      const handler: ProjectionHandler = (ctx, event) => {
+      type TestEvent = { type: "TestEvent"; data: { test: string } };
+      const handler: ProjectionHandler<DatabaseExecutor, TestEvent> = (
+        ctx,
+        event,
+      ) => {
         expect(ctx.db).toBeDefined();
         expect(ctx.partition).toBeDefined();
         expect(event.type).toBeDefined();
@@ -95,7 +100,7 @@ describe("Event Sourcing Package", () => {
 
       const mockDb = {} as DatabaseExecutor;
       const context: ProjectionContext = { db: mockDb, partition: "test" };
-      const event: ProjectionEvent = {
+      const event: ProjectionEvent<TestEvent> = {
         type: "TestEvent",
         data: { test: "data" },
         metadata: {
@@ -109,7 +114,11 @@ describe("Event Sourcing Package", () => {
     });
 
     it("should handle async ProjectionHandler", async () => {
-      const handler: ProjectionHandler = async (ctx, event) => {
+      type TestEvent = { type: "TestEvent"; data: { test: string } };
+      const handler: ProjectionHandler<DatabaseExecutor, TestEvent> = async (
+        ctx,
+        event,
+      ) => {
         expect(ctx.db).toBeDefined();
         expect(event.type).toBeDefined();
         return Promise.resolve();
@@ -117,7 +126,7 @@ describe("Event Sourcing Package", () => {
 
       const mockDb = {} as DatabaseExecutor;
       const context: ProjectionContext = { db: mockDb, partition: "test" };
-      const event: ProjectionEvent = {
+      const event: ProjectionEvent<TestEvent> = {
         type: "TestEvent",
         data: { test: "data" },
         metadata: {

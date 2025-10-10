@@ -1,4 +1,4 @@
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import { getKyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import { Hono } from "hono";
 import {
   createContextMiddleware,
@@ -14,14 +14,11 @@ import {
   type GeneratorService,
 } from "../service/generator.service.js";
 
-/**
- * Like index.ts, this file is the entry point for the generator module.
- */
 export function createGeneratorService(
   { tenantService }: { tenantService: TenantService },
   { db, logger }: { db: DatabaseExecutor; logger: Logger },
 ): GeneratorService {
-  const eventStore = createEventStore({ db, logger });
+  const eventStore = getKyselyEventStore({ db, logger });
 
   return createGeneratorServiceFactory({
     repository: createGeneratorRepository({ db, logger }),

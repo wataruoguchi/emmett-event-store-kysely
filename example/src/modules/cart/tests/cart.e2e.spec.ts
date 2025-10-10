@@ -1,8 +1,8 @@
-import { createEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+  getKyselyEventStore,
+} from "@wataruoguchi/emmett-event-store-kysely";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import z from "zod";
@@ -12,7 +12,7 @@ import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
 import { createTenantService } from "../../tenant/tenant.index.js";
 import { createCartApp, createCartService } from "../cart.index.js";
-import { cartsProjection } from "../service/event-sourcing/cart.read-model.js";
+import { cartsSnapshotProjection } from "../service/event-sourcing/cart.read-model.js";
 
 describe("Cart Integration", () => {
   const TEST_DB_NAME = "cart_e2e_test";
@@ -37,8 +37,8 @@ describe("Cart Integration", () => {
     });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
-    const { readStream } = createEventStore({ db, logger });
-    const registry = createProjectionRegistry(cartsProjection());
+    const { readStream } = getKyselyEventStore({ db, logger });
+    const registry = createProjectionRegistry(cartsSnapshotProjection());
     const runner = createProjectionRunner({
       db,
       readStream,
@@ -143,7 +143,6 @@ describe("Cart Integration", () => {
         `/api/tenants/${tenantId}/carts/${cartId}/checkout`,
         {
           method: "PUT",
-          body: JSON.stringify({ orderId: crypto.randomUUID(), total: 25 }),
         },
       );
       expect(response.status).toBe(201);
@@ -251,7 +250,6 @@ describe("Cart Integration", () => {
         `/api/tenants/${tenantId}/carts/${cartId}/checkout`,
         {
           method: "PUT",
-          body: JSON.stringify({ orderId: crypto.randomUUID(), total: 40 }),
         },
       );
       expect(checkout.status).toBe(201);
@@ -265,32 +263,30 @@ describe("Cart Integration", () => {
           "cart_id",
           "currency",
           "items_json",
+          "total",
+          "order_id",
           "is_checked_out",
           "is_cancelled",
         ])
         .where("tenant_id", "=", tenantId)
         .where("cart_id", "=", cartId)
         .executeTakeFirstOrThrow();
+      const items = row.items_json as Array<{
+        sku: string;
+        unitPrice: number;
+        quantity: number;
+      }>;
 
-      const items = row.items_json as {
-        items: Array<{
-          sku: string;
-          unitPrice: number;
-          quantity: number;
-        }>;
-        orderId: string;
-        total: number;
-      };
-
-      const sku123 = items.items.find((i) => i.sku === "SKU-123");
-      const sku456 = items.items.find((i) => i.sku === "SKU-456");
+      const sku123 = items.find((i) => i.sku === "SKU-123");
+      const sku456 = items.find((i) => i.sku === "SKU-456");
       expect(sku123?.quantity).toBe(1);
       expect(sku123?.unitPrice).toBe(25);
       expect(sku456?.quantity).toBe(1);
       expect(sku456?.unitPrice).toBe(15);
-      expect(items.orderId).toBeDefined();
-      expect(items.total).toBe(40);
       expect(row.currency).toBe("USD");
+      expect(row.total).toBe(40);
+      expect(typeof row.order_id).toBe("string");
+      expect(row.order_id!.length).toBeGreaterThan(0);
       expect(row.is_checked_out).toBe(true);
       expect(row.is_cancelled).toBe(false);
     });

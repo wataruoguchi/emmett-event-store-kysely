@@ -7,11 +7,13 @@ export async function up(db: Kysely<any>): Promise<void> {
     .ifNotExists()
     .addColumn("tenant_id", "text", (col) => col.notNull())
     .addColumn("generator_id", "text", (col) => col.notNull())
-    .addColumn("name", "text", (col) => col.notNull())
-    .addColumn("address", "text", (col) => col.notNull())
-    .addColumn("generator_type", "text", (col) => col.notNull())
+    // Denormalized columns from snapshot (nullable, populated via mapToColumns)
+    .addColumn("name", "text")
+    .addColumn("address", "text")
+    .addColumn("generator_type", "text")
     .addColumn("notes", "text")
-    .addColumn("is_deleted", "boolean", (col) => col.notNull().defaultTo(false))
+    .addColumn("is_deleted", "boolean")
+    // Event sourcing columns
     .addColumn("stream_id", "text", (col) => col.notNull())
     .addColumn("last_stream_position", "bigint", (col) => col.notNull())
     .addColumn("last_global_position", "bigint", (col) => col.notNull())
@@ -26,6 +28,8 @@ export async function up(db: Kysely<any>): Promise<void> {
       col.notNull().defaultTo(sql`now()`),
     )
     .addColumn("updated_by", "text")
+    // Snapshot column - the source of truth
+    .addColumn("snapshot", "jsonb", (col) => col.notNull())
     .addPrimaryKeyConstraint("pk_generators", [
       "tenant_id",
       "generator_id",

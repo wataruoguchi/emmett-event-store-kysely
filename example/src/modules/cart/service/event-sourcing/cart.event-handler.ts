@@ -6,7 +6,7 @@ import {
   type Command,
   type Event,
 } from "@event-driven-io/emmett";
-import type { EventStore } from "@wataruoguchi/emmett-event-store-kysely";
+import type { KyselyEventStore } from "@wataruoguchi/emmett-event-store-kysely";
 import type { AppContext } from "../../../shared/hono/context-middleware.js";
 import type { CartEntity, CartItem } from "../../domain/cart.entity.js";
 
@@ -17,7 +17,7 @@ export function cartEventHandler({
   eventStore,
   getContext,
 }: {
-  eventStore: EventStore;
+  eventStore: KyselyEventStore;
   getContext: () => AppContext;
 }) {
   const handler = DeciderCommandHandler({
@@ -35,7 +35,10 @@ export function cartEventHandler({
         eventStore,
         cartId,
         { type: "CreateCart", data },
-        { partition: data.tenantId, streamType: "cart" },
+        {
+          partition: data.tenantId,
+          streamType: "cart",
+        },
       ),
     addItem: (cartId: string, data: { tenantId: string; item: CartItem }) =>
       handler(
@@ -61,10 +64,7 @@ export function cartEventHandler({
         { type: "CartEmptied", data: { ...data, cartId } },
         { partition: data.tenantId, streamType: "cart" },
       ),
-    checkout: (
-      cartId: string,
-      data: { tenantId: string; orderId: string; total: number },
-    ) =>
+    checkout: (cartId: string, data: { tenantId: string }) =>
       handler(
         eventStore,
         cartId,
@@ -178,10 +178,17 @@ function createDecide(getContext: () => AppContext) {
     },
     checkoutCart: (
       command: CartCheckedOutCmd,
-      _state: ActiveCart,
+      state: ActiveCart,
     ): CartCheckedOut => {
-      const { total, orderId, tenantId, cartId } = command.data;
+      const { tenantId, cartId } = command.data;
+      // Calculate total from cart items
+      const total = state.items.reduce(
+        (sum, item) => sum + item.unitPrice * item.quantity,
+        0,
+      );
       if (total < 0) throw new IllegalStateError("Total cannot be negative");
+      // Generate orderId on backend
+      const orderId = crypto.randomUUID();
       return {
         type: "CartCheckedOut",
         data: {
@@ -249,54 +256,92 @@ function createDecide(getContext: () => AppContext) {
   };
 }
 
-function createEvolve() {
+export function createEvolve() {
   return function evolve(state: DomainState, event: DomainEvent): DomainState {
     switch (event.type) {
       case "CartCreated": {
-        const data = event.data as CartCreatedData;
-        return {
+        const data = event.data;
+        const activeCart: ActiveCart = {
           status: "active",
           items: [],
           tenantId: data.eventMeta.tenantId,
           cartId: data.eventMeta.cartId,
           currency: data.eventData.currency,
-        } satisfies ActiveCart;
+        };
+        return activeCart;
       }
       case "ItemAddedToCart": {
+        if (state.status === "init") return state;
         const { item } = event.data.eventData;
-        const existing = (state.items ?? []).find((i) => i.sku === item.sku);
+        const existing = state.items.find((i) => i.sku === item.sku);
         const items = existing
           ? state.items.map((i) =>
               i.sku === item.sku
                 ? { ...i, quantity: i.quantity + item.quantity }
                 : i,
             )
-          : [...(state.items ?? []), item];
-        return { ...(state as ActiveCart), items } satisfies ActiveCart;
+          : [...state.items, item];
+        const activeCart: ActiveCart = {
+          status: "active",
+          tenantId: state.tenantId,
+          cartId: state.cartId,
+          currency: state.currency,
+          items,
+        };
+        return activeCart;
       }
       case "ItemRemovedFromCart": {
+        if (state.status === "init") return state;
         const { sku, quantity } = event.data.eventData;
-        const items = (state.items ?? [])
+        const items = state.items
           .map((i) =>
             i.sku === sku ? { ...i, quantity: i.quantity - quantity } : i,
           )
           .filter((i) => i.quantity > 0);
-        return { ...(state as ActiveCart), items } satisfies ActiveCart;
+        const activeCart: ActiveCart = {
+          status: "active",
+          tenantId: state.tenantId,
+          cartId: state.cartId,
+          currency: state.currency,
+          items,
+        };
+        return activeCart;
       }
       case "CartEmptied": {
-        return { ...(state as ActiveCart), items: [] } satisfies ActiveCart;
+        if (state.status === "init") return state;
+        const activeCart: ActiveCart = {
+          status: "active",
+          tenantId: state.tenantId,
+          cartId: state.cartId,
+          currency: state.currency,
+          items: [],
+        };
+        return activeCart;
       }
       case "CartCheckedOut": {
-        return {
-          ...(state as ActiveCart),
+        if (state.status === "init") return state;
+        const { orderId, total } = event.data.eventData;
+        const checkedOutCart: CheckedOutCart = {
           status: "checkedOut",
-        } as CheckedOutCart;
+          tenantId: state.tenantId,
+          cartId: state.cartId,
+          currency: state.currency,
+          items: state.items,
+          orderId,
+          total,
+        };
+        return checkedOutCart;
       }
       case "CartCancelled": {
-        return {
-          ...(state as ActiveCart),
+        if (state.status === "init") return state;
+        const cancelledCart: CancelledCart = {
           status: "cancelled",
-        } as CancelledCart;
+          tenantId: state.tenantId,
+          cartId: state.cartId,
+          currency: state.currency,
+          items: state.items,
+        };
+        return cancelledCart;
       }
       default:
         return state;
@@ -305,7 +350,7 @@ function createEvolve() {
 }
 
 export function initialState(): DomainState {
-  return { status: "init", items: [] } as InitCart;
+  return { status: "init", items: [] };
 }
 
 // Domain state
@@ -317,9 +362,14 @@ type BaseCartState = {
 };
 type InitCart = { status: "init"; items: CartItem[] };
 type ActiveCart = BaseCartState & { status: "active" };
-type CheckedOutCart = BaseCartState & { status: "checkedOut" };
+type CheckedOutCart = BaseCartState & {
+  status: "checkedOut";
+  orderId: string;
+  total: number;
+};
 type CancelledCart = BaseCartState & { status: "cancelled" };
 type DomainState = InitCart | ActiveCart | CheckedOutCart | CancelledCart;
+export type CartDomainState = DomainState;
 
 // Event metadata
 type CartEventMeta = Pick<CartEntity, "tenantId" | "cartId"> & {
@@ -327,27 +377,27 @@ type CartEventMeta = Pick<CartEntity, "tenantId" | "cartId"> & {
   version: number;
 };
 
-export type CartCreatedData = {
+type CartCreatedData = {
   eventMeta: CartEventMeta;
   eventData: Pick<CartEntity, "currency">;
 };
-export type ItemAddedToCartData = {
+type ItemAddedToCartData = {
   eventMeta: CartEventMeta;
   eventData: { item: CartItem };
 };
-export type ItemRemovedFromCartData = {
+type ItemRemovedFromCartData = {
   eventMeta: CartEventMeta;
   eventData: { sku: string; quantity: number };
 };
-export type CartEmptiedData = {
+type CartEmptiedData = {
   eventMeta: CartEventMeta;
   eventData: null;
 };
-export type CartCheckedOutData = {
+type CartCheckedOutData = {
   eventMeta: CartEventMeta;
   eventData: { orderId: string; total: number };
 };
-export type CartCancelledData = {
+type CartCancelledData = {
   eventMeta: CartEventMeta;
   eventData: { reason: string };
 };
@@ -370,6 +420,15 @@ type DomainEvent =
   | CartCheckedOut
   | CartCancelled;
 
+// Export discriminated union for projections (maintains type-data relationship)
+export type CartDomainEvent =
+  | { type: "CartCreated"; data: CartCreatedData }
+  | { type: "ItemAddedToCart"; data: ItemAddedToCartData }
+  | { type: "ItemRemovedFromCart"; data: ItemRemovedFromCartData }
+  | { type: "CartEmptied"; data: CartEmptiedData }
+  | { type: "CartCheckedOut"; data: CartCheckedOutData }
+  | { type: "CartCancelled"; data: CartCancelledData };
+
 // Commands
 type CreateCart = Command<
   "CreateCart",
@@ -389,7 +448,7 @@ type CartEmptiedCmd = Command<
 >;
 type CartCheckedOutCmd = Command<
   "CartCheckedOut",
-  { tenantId: string; cartId: string; orderId: string; total: number }
+  { tenantId: string; cartId: string }
 >;
 type CartCancelledCmd = Command<
   "CartCancelled",

@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 
-import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+  getKyselyEventStore,
+} from "@wataruoguchi/emmett-event-store-kysely";
 import type { SelectQueryBuilder } from "kysely";
 import type { DB as DBSchema } from "kysely-codegen";
-import { generatorsProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
+import { cartsSnapshotProjection } from "../modules/cart/service/event-sourcing/cart.read-model.js";
+import { generatorsSnapshotProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
+// For traditional field-by-field projections, import:
+// import { generatorsProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
 import { getDb } from "../modules/shared/infra/db.js";
 import { logger } from "../modules/shared/infra/logger.js";
 
@@ -25,11 +28,31 @@ main(partition).catch((err) => {
  * Code example for the projection worker.
  * It can be used to project events from multiple partitions.
  * e.g., the read-model projection runner can be used to project events for partition A, partition B, and partition C.
+ *
+ * This example demonstrates two approaches:
+ * 1. Traditional field-by-field projections (generatorsProjection)
+ * 2. Snapshot-based projections that store the full aggregate state (generatorsSnapshotProjection, cartsSnapshotProjection)
+ *
+ * Snapshot-based projections:
+ * - Store the entire aggregate state in a JSONB 'snapshot' column
+ * - Allow full state reconstruction without replaying all events
+ * - Are more flexible (no schema migrations for new fields)
+ * - Use the same evolve logic as the write model for consistency
  */
 async function main(partition: string) {
   const db = getDb();
-  const readStream = createReadStream({ db, logger });
-  const registry = createProjectionRegistry(generatorsProjection());
+  const { readStream } = getKyselyEventStore({ db, logger });
+
+  // Use snapshot-based projections for both generators and carts
+  // This stores the full aggregate state in the 'snapshot' JSONB column
+  const registry = createProjectionRegistry(
+    generatorsSnapshotProjection(),
+    cartsSnapshotProjection(),
+  );
+
+  // Alternative: Use traditional field-by-field projections
+  // const registry = createProjectionRegistry(generatorsProjection());
+
   const runner = createProjectionRunner({
     db,
     readStream,

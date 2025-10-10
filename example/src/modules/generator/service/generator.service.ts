@@ -14,19 +14,22 @@ type Dependencies = {
   findTenantByIdService: TenantService["get"];
 };
 
-type GetGenerator = ReturnType<typeof createGetGeneratorService>;
 export type GeneratorService = ReturnType<typeof createGeneratorServiceFactory>;
 /**
  * Create a generator service. This file has all the business logic for the generator service.
  */
+/**
+ * The Writes services should not check whether the generator exists in the read model.
+ * They should not depend on the read model.
+ *
+ * We use assertions in `createDecide` in `cart.event-handler.ts` to ensure that the cart exists in the write model.
+ */
 export function createGeneratorServiceFactory(deps: Dependencies) {
-  const get: GetGenerator = createGetGeneratorService(deps);
-
   return {
     create: createCreateGeneratorService(deps),
-    update: createUpdateGeneratorService({ get }, deps),
-    delete: createDeleteGeneratorService({ get }, deps),
-    get,
+    update: createUpdateGeneratorService(deps),
+    delete: createDeleteGeneratorService(deps),
+    get: createGetGeneratorService(deps),
     getAll: createGetGeneratorsService(deps),
   };
 }
@@ -52,34 +55,24 @@ function createCreateGeneratorService({
   };
 }
 
-function createUpdateGeneratorService(
-  { get }: { get: GetGenerator },
-  {
-    handler,
-    findTenantByIdService,
-  }: Pick<Dependencies, "handler" | "findTenantByIdService">,
-) {
+function createUpdateGeneratorService({
+  handler,
+  findTenantByIdService,
+}: Pick<Dependencies, "handler" | "findTenantByIdService">) {
   return async (input: unknown) => {
     const generator = GeneratorEntitySchema.parse(input);
     const tenant = await findTenantByIdService(generator.tenantId);
     if (!tenant) {
       throw new GeneratorTenantNotFoundError("Tenant not found");
     }
-    const existingGenerator = await get({
-      tenantId: generator.tenantId,
-      generatorId: generator.generatorId,
-    });
-    if (!existingGenerator) {
-      throw new GeneratorNotFoundError("Generator not found");
-    }
     return await handler.update(generator.generatorId, generator);
   };
 }
 
-function createDeleteGeneratorService(
-  { get }: { get: GetGenerator },
-  { handler, findTenantByIdService }: Dependencies,
-) {
+function createDeleteGeneratorService({
+  handler,
+  findTenantByIdService,
+}: Dependencies) {
   return async ({
     tenantId,
     generatorId,
@@ -93,13 +86,6 @@ function createDeleteGeneratorService(
     const tenant = await findTenantByIdService(tenantId);
     if (!tenant) {
       throw new GeneratorTenantNotFoundError("Tenant not found");
-    }
-    const existingGenerator = await get({
-      tenantId,
-      generatorId,
-    });
-    if (!existingGenerator) {
-      throw new GeneratorNotFoundError("Generator not found");
     }
     return await handler.delete(generatorId, { tenantId, generatorId });
   };

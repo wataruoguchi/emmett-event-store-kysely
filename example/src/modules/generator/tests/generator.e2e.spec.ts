@@ -1,9 +1,9 @@
 import { faker } from "@faker-js/faker";
-import { createReadStream } from "@wataruoguchi/emmett-event-store-kysely";
 import {
   createProjectionRegistry,
   createProjectionRunner,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+  getKyselyEventStore,
+} from "@wataruoguchi/emmett-event-store-kysely";
 import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import z from "zod";
@@ -16,7 +16,7 @@ import {
   createGeneratorApp,
   createGeneratorService,
 } from "../generator.index.js";
-import { generatorsProjection } from "../service/event-sourcing/generator.read-model.js";
+import { generatorsSnapshotProjection } from "../service/event-sourcing/generator.read-model.js";
 import type { GeneratorService } from "../service/generator.service.js";
 
 describe("Generator Integration", () => {
@@ -44,8 +44,8 @@ describe("Generator Integration", () => {
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     // Projection runner (in-test integration of the worker)
-    const readStream = createReadStream({ db, logger });
-    const registry = createProjectionRegistry(generatorsProjection());
+    const { readStream } = getKyselyEventStore({ db, logger });
+    const registry = createProjectionRegistry(generatorsSnapshotProjection());
     const runner = createProjectionRunner({
       db,
       readStream,

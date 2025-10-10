@@ -1,11 +1,11 @@
 import type { Event } from "@event-driven-io/emmett";
 import type { OnConflictBuilder } from "kysely";
 import type { EventStoreDBSchema } from "../db-schema.js";
+import type { KyselyEventStore } from "../event-store/kysely-event-store.js";
 import type {
   DatabaseExecutor,
   ProjectionEvent,
   ProjectionRegistry,
-  ReadStream,
 } from "../types.js";
 
 export type SubscriptionCheckpoint = {
@@ -18,7 +18,7 @@ export type ProjectionRunnerDeps<
   T extends DatabaseExecutor = DatabaseExecutor,
 > = {
   db: T;
-  readStream: ReadStream;
+  readStream: KyselyEventStore["readStream"];
   registry: ProjectionRegistry<T>;
 };
 
@@ -127,15 +127,16 @@ export function createProjectionRunner<
         );
         continue;
       }
-      const projectionEvent: ProjectionEvent = {
-        type: ev.type,
-        data: ev.data,
-        metadata: {
-          streamId: ev.metadata.streamId,
-          streamPosition: ev.metadata.streamPosition,
-          globalPosition: ev.metadata.globalPosition,
-        },
-      };
+      const projectionEvent: ProjectionEvent<{ type: string; data: unknown }> =
+        {
+          type: ev.type,
+          data: ev.data,
+          metadata: {
+            streamId: ev.metadata.streamId,
+            streamPosition: ev.metadata.streamPosition,
+            globalPosition: ev.metadata.globalPosition,
+          },
+        };
       for (const handler of handlers) {
         await handler({ db, partition }, projectionEvent);
       }

@@ -1,218 +1,187 @@
 import type {
-  ProjectionEvent,
-  ProjectionRegistry,
-} from "@wataruoguchi/emmett-event-store-kysely/projections";
+  Event,
+  ReadEvent,
+  ReadEventMetadataWithGlobalPosition,
+} from "@event-driven-io/emmett";
+import {
+  createKyselyEventStoreConsumer,
+  createSnapshotProjectionRegistry,
+  type ProjectionEvent,
+  type ProjectionHandler,
+  type ProjectionRegistry,
+} from "@wataruoguchi/emmett-event-store-kysely";
 import type { DatabaseExecutor } from "../../../shared/infra/db.js";
-import type {
-  CartCheckedOutData,
-  CartCreatedData,
-  ItemAddedToCartData,
-  ItemRemovedFromCartData,
+import type { Logger } from "../../../shared/infra/logger.js";
+import {
+  initialState as cartInitialState,
+  createEvolve,
+  type CartDomainEvent,
+  type CartDomainState,
 } from "./cart.event-handler.js";
 
-type CartReadItem = {
-  sku: string;
-  name: string;
-  unitPrice: number;
-  quantity: number;
-};
+/**
+ * Snapshot-based projection for carts.
+ *
+ * Instead of manually mapping individual fields to columns, this stores the entire
+ * aggregate state in the `snapshot` JSONB column. This approach:
+ * - Allows reconstructing the full state without replaying all events
+ * - Is more flexible (no schema migrations for new fields)
+ * - Keeps the projection logic closer to the domain model
+ * - Uses the same evolve logic as the write model for consistency
+ *
+ * @returns ProjectionRegistry mapping event types to snapshot-based handlers
+ *
+ * @example
+ * ```typescript
+ * // Use in tests or with projection runner
+ * const registry = cartsSnapshotProjection();
+ * const runner = createProjectionRunner({ db, readStream, registry });
+ * await runner.projectEvents('subscription-id', 'stream-id', { partition: 'tenant-123' });
+ * ```
+ */
+export function cartsSnapshotProjection(): ProjectionRegistry<DatabaseExecutor> {
+  // Reuse the exact same evolve logic from the domain event handler!
+  // This ensures consistency between write and read models.
+  const domainEvolve = createEvolve();
 
-function parseItemsJson(raw: unknown): CartReadItem[] {
-  const val = raw;
-  if (Array.isArray(val)) return val as CartReadItem[];
-  if (val === null || val === undefined) return [] as CartReadItem[];
-  if (typeof val === "string") {
-    const s = val.trim();
-    if (s.length === 0) return [] as CartReadItem[];
-    try {
-      return JSON.parse(s) as CartReadItem[];
-    } catch {
-      return [] as CartReadItem[];
+  // Wrapper to adapt ProjectionEvent to the domain evolve function
+  // The discriminated union is preserved through the type system!
+  const evolve = (
+    state: CartDomainState,
+    event: ProjectionEvent<CartDomainEvent>,
+  ): CartDomainState => {
+    // TypeScript now correctly narrows event.data based on event.type
+    return domainEvolve(state, event);
+  };
+
+  return createSnapshotProjectionRegistry<
+    CartDomainState,
+    "carts",
+    CartDomainEvent
+  >(
+    [
+      "CartCreated",
+      "ItemAddedToCart",
+      "ItemRemovedFromCart",
+      "CartEmptied",
+      "CartCheckedOut",
+      "CartCancelled",
+    ],
+    {
+      tableName: "carts",
+      primaryKeys: ["tenant_id", "cart_id", "partition"],
+      extractKeys: (
+        event: ProjectionEvent<CartDomainEvent>,
+        partition: string,
+      ) => {
+        // TypeScript now knows that all CartDomainEvent variants have eventMeta!
+        return {
+          tenant_id: event.data.eventMeta.tenantId,
+          cart_id: event.data.eventMeta.cartId,
+          partition,
+        };
+      },
+      evolve,
+      initialState: cartInitialState,
+      // Map snapshot state to denormalized columns for easier querying
+      mapToColumns: (state: CartDomainState) => {
+        // Handle InitCart state (shouldn't normally occur in projections after CartCreated)
+        if (state.status === "init") {
+          return {
+            currency: null,
+            total: null,
+            order_id: null,
+            items_json: JSON.stringify([]),
+            is_checked_out: false,
+            is_cancelled: false,
+          };
+        }
+
+        // For all other states that extend BaseCartState
+        return {
+          currency: state.currency,
+          total: state.status === "checkedOut" ? state.total : null,
+          order_id: state.status === "checkedOut" ? state.orderId : null,
+          items_json: JSON.stringify(state.items),
+          is_checked_out: state.status === "checkedOut",
+          is_cancelled: state.status === "cancelled",
+        };
+      },
+    },
+  );
+}
+
+/**
+ * Creates a consumer that automatically processes cart events using snapshot-based projections.
+ *
+ * This consumer uses `cartsSnapshotProjection()` which stores the full aggregate state
+ * in the `snapshot` JSONB column.
+ *
+ * **When to use this:**
+ * - In production for continuous, automatic read model updates
+ * - When you want background processing with automatic checkpointing
+ * - For real-time or near-real-time read model consistency
+ *
+ * **When NOT to use this:**
+ * - In tests where you need synchronous, on-demand projection - use `cartsSnapshotProjection()` with `createProjectionRunner` instead
+ *
+ * @param db - Database executor instance
+ * @param logger - Logger instance
+ * @param partition - Partition to process (typically tenant ID)
+ * @param consumerName - Optional custom consumer name for tracking
+ * @param batchSize - Optional batch size for processing events (default: 100)
+ * @param pollingInterval - Optional polling interval in milliseconds (default: 1000)
+ * @returns Consumer instance with start/stop methods
+ */
+export function createCartsConsumer({
+  db,
+  logger,
+  partition,
+  consumerName = "carts-read-model",
+  batchSize = 100,
+  pollingInterval = 1000,
+}: {
+  db: DatabaseExecutor;
+  logger: Logger;
+  partition: string;
+  consumerName?: string;
+  batchSize?: number;
+  pollingInterval?: number;
+}) {
+  const consumer = createKyselyEventStoreConsumer({
+    db,
+    logger,
+    consumerName,
+    batchSize,
+    pollingInterval,
+  });
+
+  // Use snapshot-based projection registry
+  const registry = cartsSnapshotProjection();
+
+  for (const [eventType, handlers] of Object.entries(registry)) {
+    for (const handler of handlers as ProjectionHandler<DatabaseExecutor>[]) {
+      consumer.subscribe(
+        async (
+          event: ReadEvent<Event, ReadEventMetadataWithGlobalPosition>,
+        ) => {
+          // Convert consumer event to projection event format
+          const projectionEvent: ProjectionEvent<CartDomainEvent> = {
+            type: event.type,
+            data: event.data,
+            metadata: {
+              streamId: event.metadata.streamName,
+              streamPosition: event.metadata.streamPosition,
+              globalPosition: event.metadata.globalPosition,
+            },
+          } as ProjectionEvent<CartDomainEvent>;
+
+          await handler({ db, partition }, projectionEvent);
+        },
+        eventType,
+      );
     }
   }
-  return [] as CartReadItem[];
-}
 
-async function upsertIfNewer(
-  db: DatabaseExecutor,
-  event: ProjectionEvent,
-  apply: (db: DatabaseExecutor) => Promise<void>,
-) {
-  const existing = await db
-    .selectFrom("carts")
-    .select(["last_stream_position"])
-    .where("stream_id", "=", event.metadata.streamId)
-    .executeTakeFirst();
-
-  const lastPos = existing
-    ? BigInt(String(existing.last_stream_position))
-    : -1n;
-  if (event.metadata.streamPosition <= lastPos) return;
-
-  await apply(db);
-}
-
-export function cartsProjection(): ProjectionRegistry<DatabaseExecutor> {
-  return {
-    CartCreated: [
-      async ({ db, partition }, event) => {
-        const data = event.data as CartCreatedData;
-        await upsertIfNewer(db, event, async (q) => {
-          await q
-            .insertInto("carts")
-            .values({
-              tenant_id: data.eventMeta.tenantId,
-              cart_id: data.eventMeta.cartId,
-              currency: data.eventData.currency ?? "USD",
-              is_checked_out: false,
-              is_cancelled: false,
-              items_json: JSON.stringify([]),
-              stream_id: event.metadata.streamId,
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-              partition,
-            })
-            .onConflict((oc) =>
-              oc.columns(["tenant_id", "cart_id", "partition"]).doUpdateSet({
-                currency: (eb) => eb.ref("excluded.currency"),
-                is_checked_out: (eb) => eb.ref("excluded.is_checked_out"),
-                is_cancelled: (eb) => eb.ref("excluded.is_cancelled"),
-                items_json: (eb) => eb.ref("excluded.items_json"),
-                last_stream_position: (eb) =>
-                  eb.ref("excluded.last_stream_position"),
-                last_global_position: (eb) =>
-                  eb.ref("excluded.last_global_position"),
-              }),
-            )
-            .execute();
-        });
-      },
-    ],
-    ItemAddedToCart: [
-      async ({ db, partition }, event) => {
-        const data = event.data as ItemAddedToCartData;
-        await upsertIfNewer(db, event, async (q) => {
-          const row = await q
-            .selectFrom("carts")
-            .select(["items_json"])
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .executeTakeFirst();
-          const items: CartReadItem[] = parseItemsJson(row?.items_json);
-          const existing = items.find(
-            (i) => i.sku === data.eventData.item?.sku,
-          );
-          if (existing) existing.quantity += data.eventData.item?.quantity ?? 0;
-          else if (data.eventData.item) items.push(data.eventData.item);
-
-          await q
-            .updateTable("carts")
-            .set({
-              items_json: JSON.stringify(items),
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-    ItemRemovedFromCart: [
-      async ({ db, partition }, event) => {
-        const data = event.data as ItemRemovedFromCartData;
-        await upsertIfNewer(db, event, async (q) => {
-          const row = await q
-            .selectFrom("carts")
-            .select(["items_json"])
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .executeTakeFirst();
-          let items: CartReadItem[] = parseItemsJson(row?.items_json);
-          items = items
-            .map((i) =>
-              i.sku === data.eventData.sku
-                ? {
-                    ...i,
-                    quantity: i.quantity - (data.eventData.quantity ?? 0),
-                  }
-                : i,
-            )
-            .filter((i) => i.quantity > 0);
-
-          await q
-            .updateTable("carts")
-            .set({
-              items_json: JSON.stringify(items),
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-    CartEmptied: [
-      async ({ db, partition }, event) => {
-        await upsertIfNewer(db, event, async (q) => {
-          await q
-            .updateTable("carts")
-            .set({
-              items_json: JSON.stringify([]),
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-    CartCheckedOut: [
-      async ({ db, partition }, event) => {
-        const data = event.data as CartCheckedOutData;
-        await upsertIfNewer(db, event, async (q) => {
-          const row = await q
-            .selectFrom("carts")
-            .select(["items_json"])
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .executeTakeFirst();
-
-          const items: CartReadItem[] = parseItemsJson(row?.items_json);
-
-          const { orderId, total } = data.eventData;
-
-          await q
-            .updateTable("carts")
-            .set({
-              is_checked_out: true,
-              items_json: JSON.stringify({ items, orderId, total }),
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-    CartCancelled: [
-      async ({ db, partition }, event) => {
-        await upsertIfNewer(db, event, async (q) => {
-          await q
-            .updateTable("carts")
-            .set({
-              is_cancelled: true,
-              last_stream_position: event.metadata.streamPosition.toString(),
-              last_global_position: event.metadata.globalPosition.toString(),
-            })
-            .where("stream_id", "=", event.metadata.streamId)
-            .where("partition", "=", partition)
-            .execute();
-        });
-      },
-    ],
-  } satisfies ProjectionRegistry;
+  return consumer;
 }

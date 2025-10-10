@@ -30,9 +30,30 @@ export type ProjectionEventMetadata = {
   globalPosition: bigint;
 };
 
-export type ProjectionEvent = {
-  type: string;
-  data: unknown;
+/**
+ * ProjectionEvent that preserves discriminated union relationships.
+ *
+ * Instead of independent EventType and EventData generics, this accepts a union type
+ * where each variant has a specific type-data pairing. This allows TypeScript to
+ * properly narrow the data type when you narrow the event type.
+ *
+ * @example
+ * ```typescript
+ * type MyEvent =
+ *   | { type: "Created"; data: { id: string } }
+ *   | { type: "Updated"; data: { name: string } };
+ *
+ * type MyProjectionEvent = ProjectionEvent<MyEvent>;
+ *
+ * function handle(event: MyProjectionEvent) {
+ *   if (event.type === "Created") {
+ *     // TypeScript knows event.data is { id: string }
+ *     console.log(event.data.id);
+ *   }
+ * }
+ * ```
+ */
+export type ProjectionEvent<E extends { type: string; data: unknown }> = E & {
   metadata: ProjectionEventMetadata;
 };
 
@@ -41,14 +62,17 @@ export type ProjectionContext<T = DatabaseExecutor<any>> = {
   partition: string;
 };
 
-export type ProjectionHandler<T = DatabaseExecutor<any>> = (
+export type ProjectionHandler<
+  T = DatabaseExecutor<any>,
+  E extends { type: string; data: unknown } = { type: string; data: unknown },
+> = (
   ctx: ProjectionContext<T>,
-  event: ProjectionEvent,
+  event: ProjectionEvent<E>,
 ) => void | Promise<void>;
 
 export type ProjectionRegistry<T = DatabaseExecutor<any>> = Record<
   string,
-  ProjectionHandler<T>[]
+  ProjectionHandler<T, any>[]
 >;
 
 export function createProjectionRegistry<T = DatabaseExecutor<any>>(
@@ -66,6 +90,3 @@ export function createProjectionRegistry<T = DatabaseExecutor<any>>(
   }
   return combined;
 }
-
-// Re-export ReadStream from event-store
-export type { ReadStream } from "./event-store/read-stream.js";
