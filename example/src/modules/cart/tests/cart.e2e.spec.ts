@@ -10,9 +10,12 @@ import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantService } from "../../tenant/tenant.index.js";
-import { createCartApp, createCartService } from "../cart.index.js";
-import { cartsSnapshotProjection } from "../service/event-sourcing/cart.read-model.js";
+import { createTenantModule } from "../../tenant/tenant.index.js";
+import {
+  cartsSnapshotProjection,
+  createCartHttpAdapter,
+  createCartModule,
+} from "../cart.index.js";
 
 describe("Cart Integration", () => {
   const TEST_DB_NAME = "cart_e2e_test";
@@ -28,13 +31,9 @@ describe("Cart Integration", () => {
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createCartApp({
-      cartService: createCartService(
-        { tenantService: createTenantService({ db, logger }) },
-        { db, logger },
-      ),
-      logger,
-    });
+    const tenantPort = createTenantModule({ db, logger });
+    const cartPort = createCartModule({ tenantPort, db, logger });
+    app = createCartHttpAdapter({ cartPort, logger });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     const { readStream } = getKyselyEventStore({ db, logger });
@@ -192,7 +191,7 @@ describe("Cart Integration", () => {
       );
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body.cart_id).toEqual(cartId);
+      expect(body.cartId).toEqual(cartId); // API now returns camelCase
     });
   });
 

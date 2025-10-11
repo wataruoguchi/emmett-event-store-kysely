@@ -2,16 +2,16 @@ import { faker } from "@faker-js/faker";
 import { sql } from "kysely";
 import type { DatabaseExecutor } from "../../modules/shared/infra/db.js";
 import { logger } from "../../modules/shared/infra/logger.js";
-import { createTenantService } from "../../modules/tenant/tenant.index.js";
+import { createTenantModule } from "../../modules/tenant/tenant.index.js";
 
 export function seedTestDb(db: DatabaseExecutor) {
-  const tenantService = createTenantService({ db, logger });
+  const tenantPort = createTenantModule({ db, logger });
 
   return {
     async createTenant(_name?: string) {
       const name = _name || faker.company.name();
       const tenantId = name.toLowerCase().replace(/ /g, "_");
-      const { id } = await tenantService.create({
+      const { id } = await tenantPort.create({
         tenantId,
         name,
       });

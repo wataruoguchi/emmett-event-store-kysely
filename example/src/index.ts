@@ -1,16 +1,19 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import {
-  createGeneratorApp,
-  createGeneratorService,
+  createCartHttpAdapter,
+  createCartModule,
+} from "./modules/cart/cart.index.js";
+import {
+  createGeneratorHttpAdapter,
+  createGeneratorModule,
 } from "./modules/generator/generator.index.js";
 import { getDb } from "./modules/shared/infra/db.js";
 import { logger } from "./modules/shared/infra/logger.js";
 import {
-  createTenantApp,
-  createTenantService,
+  createTenantHttpAdapter,
+  createTenantModule,
 } from "./modules/tenant/tenant.index.js";
-import { createCartApp, createCartService } from "./modules/cart/cart.index.js";
 
 const app = new Hono();
 const db = getDb();
@@ -19,33 +22,25 @@ app.get("/", (c) => {
   return c.text("Hello Hono!");
 });
 
-const tenantService = createTenantService({ db, logger });
 /**
- * Tenant module starts here
+ * Module composition following Hexagonal Architecture
+ * Each module exposes its port (application service) and HTTP adapter separately
+ * Modules communicate through ports, not directly through repositories
  */
-app.route("", createTenantApp({ tenantService, logger }));
 
-/**
- * Generator module starts here
- */
-app.route(
-  "",
-  createGeneratorApp({
-    generatorService: createGeneratorService({ tenantService }, { db, logger }),
-    logger,
-  }),
-);
+// Create Tenant module (independent, no dependencies on other modules)
+const tenantPort = createTenantModule({ db, logger });
 
-/**
- * Cart module starts here
- */
-app.route(
-  "",
-  createCartApp({
-    cartService: createCartService({ tenantService }, { db, logger }),
-    logger,
-  }),
-);
+// Create Cart module (depends on Tenant port)
+const cartPort = createCartModule({ tenantPort, db, logger });
+
+// Create Generator module (depends on Tenant port)
+const generatorPort = createGeneratorModule({ tenantPort, db, logger });
+
+// Mount HTTP adapters
+app.route("", createTenantHttpAdapter({ tenantPort, logger }));
+app.route("", createCartHttpAdapter({ cartPort, logger }));
+app.route("", createGeneratorHttpAdapter({ generatorPort, logger }));
 
 serve(
   {

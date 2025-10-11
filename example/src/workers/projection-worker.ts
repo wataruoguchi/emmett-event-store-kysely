@@ -7,10 +7,8 @@ import {
 } from "@wataruoguchi/emmett-event-store-kysely";
 import type { SelectQueryBuilder } from "kysely";
 import type { DB as DBSchema } from "kysely-codegen";
-import { cartsSnapshotProjection } from "../modules/cart/service/event-sourcing/cart.read-model.js";
-import { generatorsSnapshotProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
-// For traditional field-by-field projections, import:
-// import { generatorsProjection } from "../modules/generator/service/event-sourcing/generator.read-model.js";
+import { cartsSnapshotProjection } from "../modules/cart/cart.index.js";
+import { generatorsSnapshotProjection } from "../modules/generator/generator.index.js";
 import { getDb } from "../modules/shared/infra/db.js";
 import { logger } from "../modules/shared/infra/logger.js";
 

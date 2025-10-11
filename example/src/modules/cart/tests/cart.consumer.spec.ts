@@ -14,7 +14,7 @@ import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createCartsConsumer } from "../service/event-sourcing/cart.read-model.js";
+import { createCartsConsumer } from "../cart.index.js";
 
 describe("Cart Consumer Tests", () => {
   const TEST_DB_NAME = "cart_consumer_test";

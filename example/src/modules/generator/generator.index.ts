@@ -1,7 +1,11 @@
 /**
- * Each module has one index.ts file. Everything in the module is exported from here.
+ * Generator Module Public API
+ * Exports the module's public interface following hexagonal architecture
  */
 export {
-  createGeneratorApp,
-  createGeneratorService,
-} from "./interface/generator.interface.js";
+  createGeneratorHttpAdapter,
+  createGeneratorModule,
+  createGeneratorsConsumer,
+  generatorsSnapshotProjection,
+  type GeneratorPort,
+} from "./generator.module.js";

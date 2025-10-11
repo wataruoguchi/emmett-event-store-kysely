@@ -1,8 +1,9 @@
 /**
- * Each module has one index.ts file. Everything in the module is exported from here.
+ * Tenant Module Public API
+ * Exports the module's public interface following hexagonal architecture
  */
 export {
-  createTenantApp,
-  createTenantService,
-} from "./interface/tenant.interface.js";
-export type { TenantService } from "./service/tenant.service.js";
+  createTenantHttpAdapter,
+  createTenantModule,
+  type TenantPort,
+} from "./tenant.module.js";

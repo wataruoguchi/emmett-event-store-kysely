@@ -4,7 +4,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantApp, createTenantService } from "../tenant.index.js";
+import {
+  createTenantHttpAdapter,
+  createTenantModule,
+} from "../tenant.index.js";
 
 describe("Tenant Integration", () => {
   const TEST_DB_NAME = "tenant_e2e_test";
@@ -16,10 +19,8 @@ describe("Tenant Integration", () => {
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createTenantApp({
-      tenantService: createTenantService({ db, logger }),
-      logger,
-    });
+    const tenantPort = createTenantModule({ db, logger });
+    app = createTenantHttpAdapter({ tenantPort, logger });
   });
 
   afterAll(async () => {
@@ -36,7 +37,7 @@ describe("Tenant Integration", () => {
   });
 
   describe("when a tenant is created", () => {
-    let postResponsePayload: { id: string; tenant_id: string };
+    let postResponsePayload: { id: string; tenantId: string };
     beforeAll(async () => {
       const tenantData = generateTenantData();
       const response = await app.request(`/api/tenants`, {
@@ -56,13 +57,13 @@ describe("Tenant Integration", () => {
     });
 
     it("should get a tenant by tenant id", async () => {
-      const tenantId = postResponsePayload.tenant_id;
+      const tenantId = postResponsePayload.tenantId;
       const getResponse = await app.request(`/api/tenants/${tenantId}`, {
         method: "GET",
       });
       expect(getResponse.status).toBe(200);
-      expect((await getResponse.json()).tenant_id).toEqual(
-        postResponsePayload.tenant_id,
+      expect((await getResponse.json()).tenantId).toEqual(
+        postResponsePayload.tenantId, // API now returns camelCase
       );
     });
   });

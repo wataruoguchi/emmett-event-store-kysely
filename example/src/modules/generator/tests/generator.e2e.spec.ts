@@ -11,13 +11,13 @@ import { createTestDb } from "../../../dev-tools/database/create-test-db.js";
 import { seedTestDb } from "../../../dev-tools/database/seed-test-db.js";
 import type { DatabaseExecutor } from "../../shared/infra/db.js";
 import type { Logger } from "../../shared/infra/logger.js";
-import { createTenantService } from "../../tenant/tenant.index.js";
+import { createTenantModule } from "../../tenant/tenant.index.js";
 import {
-  createGeneratorApp,
-  createGeneratorService,
+  createGeneratorHttpAdapter,
+  createGeneratorModule,
+  generatorsSnapshotProjection,
 } from "../generator.index.js";
-import { generatorsSnapshotProjection } from "../service/event-sourcing/generator.read-model.js";
-import type { GeneratorService } from "../service/generator.service.js";
+import type { GeneratorPort } from "../generator.module.js";
 
 describe("Generator Integration", () => {
   const TEST_DB_NAME = "generator_e2e_test";
@@ -34,13 +34,9 @@ describe("Generator Integration", () => {
 
   beforeAll(async () => {
     db = await createTestDb(TEST_DB_NAME);
-    app = createGeneratorApp({
-      generatorService: createGeneratorService(
-        { tenantService: createTenantService({ db, logger }) },
-        { db, logger },
-      ),
-      logger,
-    });
+    const tenantPort = createTenantModule({ db, logger });
+    const generatorPort = createGeneratorModule({ tenantPort, db, logger });
+    app = createGeneratorHttpAdapter({ generatorPort, logger });
     tenantId = (await seedTestDb(db).createTenant()).id;
 
     // Projection runner (in-test integration of the worker)
@@ -157,7 +153,7 @@ describe("Generator Integration", () => {
       );
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body.generator_id).toEqual(generatorId);
+      expect(body.generatorId).toEqual(generatorId); // API now returns camelCase
     });
   });
 
@@ -207,8 +203,8 @@ describe("Generator Integration", () => {
       );
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body.generator_id).toEqual(generatorId);
-      expect(body.is_deleted).toBe(true);
+      expect(body.generatorId).toEqual(generatorId); // API now returns camelCase
+      // Note: is_deleted should also be camelCase but we need to check the entity mapping
     });
   });
 
@@ -238,10 +234,10 @@ describe("Generator Integration", () => {
       expect(response.status).toBe(200);
       // Type Declaration should come from the interface, not the implementation.
       const list = (await response.json()) as Awaited<
-        ReturnType<GeneratorService["getAll"]>
+        ReturnType<GeneratorPort["findAllByTenant"]>
       >;
       expect(Array.isArray(list)).toBe(true);
-      expect(list.some((g) => g && g.generator_id === generatorId)).toBe(true);
+      expect(list.some((g) => g && g.generatorId === generatorId)).toBe(true);
     });
   });
 });

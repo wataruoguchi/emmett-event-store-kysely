@@ -1,7 +1,11 @@
 /**
- * Each module has one index.ts file. Everything in the module is exported from here.
+ * Cart Module Public API
+ * Exports the module's public interface following hexagonal architecture
  */
 export {
-  createCartApp,
-  createCartService,
-} from "./interface/cart.interface.js";
+  cartsSnapshotProjection,
+  createCartHttpAdapter,
+  createCartModule,
+  createCartsConsumer,
+  type CartPort,
+} from "./cart.module.js";
