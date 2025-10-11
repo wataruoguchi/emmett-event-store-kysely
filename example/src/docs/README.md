@@ -233,5 +233,5 @@ node dist/index.js
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/wataruoguchi/poc-emmett/issues)
+- **Issues**: [GitHub Issues](https://github.com/wataruoguchi/emmett-event-store-kysely/issues)
 - **Package Docs**: [../../../package/docs/](../../../../package/docs/)
