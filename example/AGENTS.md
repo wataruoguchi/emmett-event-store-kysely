@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is an example SaaS web app build with Node.js + Hono.js + Kysely + Emmett and our package `@wataruoguchi/emmett-event-store-kysely`.
+This is an example SaaS web app built with Node.js + Hono.js + Kysely + Emmett and our package `@wataruoguchi/emmett-event-store-kysely`.
 With this app, we explain how to use `@wataruoguchi/emmett-event-store-kysely` with the working application.
 
 ## Setup / Build & Test
