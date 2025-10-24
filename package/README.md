@@ -29,6 +29,14 @@ import { Kysely } from "kysely";
 // See https://github.com/wataruoguchi/poc-emmett/blob/main/package/docs/database-setup.md for details
 ```
 
+A read model table expects to have the following columns:
+
+- stream_id (uuid)
+- last_stream_position (bigint)
+- last_global_position (bigint)
+- partition (text)
+- snapshot (jsonb)
+
 ### 2. Create Event Store
 
 ```typescript
