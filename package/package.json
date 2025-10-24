@@ -9,10 +9,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wataruoguchi/poc-emmett.git"
+    "url": "https://github.com/wataruoguchi/emmett-event-store-kysely.git"
   },
-  "homepage": "https://github.com/wataruoguchi/poc-emmett",
-  "bugs": "https://github.com/wataruoguchi/poc-emmett/issues",
+  "homepage": "https://github.com/wataruoguchi/emmett-event-store-kysely",
+  "bugs": "https://github.com/wataruoguchi/emmett-event-store-kysely/issues",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
