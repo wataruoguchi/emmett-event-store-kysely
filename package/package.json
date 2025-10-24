@@ -25,11 +25,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./projections": {
-      "types": "./dist/projections/index.d.ts",
-      "import": "./dist/projections/index.js",
-      "require": "./dist/projections/index.cjs"
     }
   },
   "scripts": {
