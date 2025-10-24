@@ -3,5 +3,5 @@
  */
 export default {
   branches: ["main"],
-  repositoryUrl: "https://github.com/wataruoguchi/poc-emmett",
+  repositoryUrl: "https://github.com/wataruoguchi/emmett-event-store-kysely",
 };
