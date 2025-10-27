@@ -6,7 +6,6 @@
     "prepare": "husky",
     "format": "biome format --write"
   },
-  "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
     "@types/node": "^20.11.17",
