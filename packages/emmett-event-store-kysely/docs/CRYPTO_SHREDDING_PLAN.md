@@ -18,6 +18,7 @@
 7. [Testing Strategy](#testing-strategy)
 8. [Migration Plan](#migration-plan)
 9. [Documentation](#documentation)
+10. [Library Packaging & Compatibility](#library-packaging--compatibility)
 
 ---
 
@@ -583,6 +584,88 @@ Crypto shredding:
 - Keep audit trail of destruction time and affected keyIds for compliance.
 
 ---
+
+## Library Packaging & Compatibility
+
+### Distribution as a Separate Library
+
+Publish crypto shredding as an independent package that can wrap any Emmett `EventStore` implementation without code changes in the core store. The package exposes a decorator that returns an `EventStore` compatible instance.
+
+Example package metadata:
+
+```txt
+name: emmett-crypto-shredding
+peerDependencies:
+  @event-driven-io/emmett: ^0.38
+```
+
+Installation:
+
+```bash
+npm install emmett-crypto-shredding
+```
+
+Public API surface (minimal):
+
+```ts
+import type { EventStore } from '@event-driven-io/emmett';
+import { createCryptoEventStore } from 'emmett-crypto-shredding';
+
+export interface EncryptionPolicyResolver { /* see API Design */ }
+export interface KeyManagement { /* see API Design */ }
+export interface CryptoProvider { /* see API Design */ }
+
+export function createCryptoEventStore<TMeta>(
+  base: EventStore<TMeta>,
+  deps: {
+    policy: EncryptionPolicyResolver;
+    keys: KeyManagement;
+    crypto: CryptoProvider;
+    buildAAD?: (ctx: { tenantId: string; streamId: string }) => Uint8Array;
+  },
+): EventStore<TMeta>;
+```
+
+### Using with Emmett PostgreSQL Store
+
+This library can wrap the official PostgreSQL event store implementation and any other `EventStore` that adheres to Emmett interfaces.
+
+```ts
+// Base store (from @event-driven-io/emmett-postgresql)
+const baseStore = createPostgresEventStore({ /* per package docs */ });
+
+// Decorated store adds encryption/decryption transparently
+const cryptoStore = createCryptoEventStore(baseStore, { policy, keys, crypto });
+
+// Domain-level injection
+const cartStore = baseStore;         // no encryption
+const generatorStore = cryptoStore;  // encryption enabled
+```
+
+Projections and consumers:
+
+- Projection runner: pass `cryptoStore.readStream` so projections see plaintext.
+- Consumer: if reading via SQL instead of `readStream`, provide a `decrypt` hook to transform events before user handlers.
+
+### Compatibility Requirements
+
+Provide the following to ensure compatibility across backends:
+
+- The base store must preserve event metadata; plugin records `metadata.enc` for algorithm, key id, version, and IV.
+- The base store should not mutate event `data` or `metadata` beyond normal serialization.
+- Consumers reading directly from tables should support an optional decrypt step; otherwise they will see ciphertext.
+
+### Versioning & Migration
+
+- Semantic versioning, no breaking changes to the Emmett `EventStore` interface.
+- Introduce new algorithms or policy fields via additive metadata (`metadata.enc`).
+- Support side-by-side algorithm rotation (old events keep their algo; new events use new algo).
+
+### Security Defaults
+
+- Default algorithms: AES-GCM (primary), ChaCha20-Poly1305 (fallback).
+- 12-byte IVs, unique per event; AAD includes tenantId and stream identifiers where available.
+- Keys never stored in plaintext; DEKs unwrapped in-memory only.
 
 ## Security Considerations
 

@@ -557,6 +557,5 @@ Do you need to test consumer-specific behavior?
 ---
 
 **Further Reading:**
+
 - [Projections Architecture](./PROJECTIONS_ARCHITECTURE.md)
-- [Package: Projection Runner](../../../../package/docs/projection-runner.md)
-- [Package: Consumer](../../../../package/docs/consumer.md)

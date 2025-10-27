@@ -20,13 +20,12 @@ npm install @wataruoguchi/emmett-event-store-kysely @event-driven-io/emmett kyse
 
 ### 1. Database Setup
 
-Set up the required PostgreSQL tables using [our migration example](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/database/migrations/1758758113676_event_sourcing_migration_example.ts):
+Set up the required PostgreSQL tables using [our migration example](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/packages/emmett-event-store-kysely/database/migrations/1758758113676_event_sourcing_migration_example.ts):
 
 ```typescript
 import { Kysely } from "kysely";
 
 // Required tables: messages, streams, subscriptions
-// See https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/database-setup.md for details
 ```
 
 A read model table expects to have the following columns:
@@ -110,24 +109,14 @@ await runner.projectEvents("subscription-id", "cart-123", {
 });
 ```
 
-See [Snapshot Projections documentation](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/snapshot-projections.md) for details.
-
 ## Documentation
 
-📚 **[Complete Documentation](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/README.md)**
-
-### Core Guides
-
-- [Database Setup](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/database-setup.md) - PostgreSQL schema and requirements
-- [Event Store](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/event-store.md) - Core event store API
-- [Snapshot Projections](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/snapshot-projections.md) - Build read models (recommended) ⭐
-- [Event Consumer](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/consumer.md) - Continuous background processing
-- [Projection Runner](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/docs/projection-runner.md) - On-demand processing for tests
+📚 **[Complete Documentation](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/packages/emmett-event-store-kysely/docs/README.md)**
 
 ### Examples
 
 - [Working Example](https://github.com/wataruoguchi/emmett-event-store-kysely/tree/main/example/) - Complete application with carts and generators
-- [Migration Example](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/package/database/migrations/1758758113676_event_sourcing_migration_example.ts) - Database setup
+- [Migration Example](https://github.com/wataruoguchi/emmett-event-store-kysely/blob/main/packages/emmett-event-store-kysely/database/migrations/1758758113676_event_sourcing_migration_example.ts) - Database setup
 
 ## License
 
