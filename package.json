@@ -2,7 +2,9 @@
   "name": "poc-emmett-monorepo",
   "type": "module",
   "scripts": {
-    "test": "cd example && vitest run",
+    "test:example": "cd example && npm run test",
+    "test:emmett-event-store-kysely": "cd packages/emmett-event-store-kysely && npm run test",
+    "test": "npm run test:example && npm run test:emmett-event-store-kysely",
     "prepare": "husky",
     "format": "biome format --write"
   },

@@ -4,7 +4,6 @@ This directory contains documentation and examples for using the `@wataruoguchi/
 
 ## Quick Links
 
-- 📦 [Package Documentation](../../../../package/docs/README.md) - Core library documentation
 - 🔧 [Projections Architecture](./PROJECTIONS_ARCHITECTURE.md) - How projections work in this app
 - 🧪 [Testing Projections](./TESTING_PROJECTIONS.md) - Testing strategies
 - 🔄 [Consumer Usage](./consumer-usage.ts.example) - Background processing examples
@@ -23,6 +22,7 @@ This example application demonstrates:
 ### 1. Event Store
 
 The core event store provides:
+
 - `appendToStream()` - Write events
 - `readStream()` - Read events from a stream
 - `aggregateStream()` - Rebuild aggregate state
@@ -63,16 +63,16 @@ const registry = createSnapshotProjectionRegistry(
 ```
 
 **Why snapshots?**
+
 - ✅ Consistency with write model (same `evolve`)
 - ✅ No schema migrations for new fields
 - ✅ Less code maintenance
 - ✅ Full state always available
 
-See [Snapshot Projections Guide](../../../../package/docs/snapshot-projections.md) for details.
-
 ### 3. Testing vs Production
 
 **In Tests (Synchronous):**
+
 ```typescript
 import { 
   createProjectionRunner 
@@ -209,17 +209,12 @@ node dist/index.js
 
 ## Further Reading
 
-### Package Documentation
-- [Database Setup](../../../../package/docs/database-setup.md) - Schema and requirements
-- [Event Store](../../../../package/docs/event-store.md) - Core API
-- [Snapshot Projections](../../../../package/docs/snapshot-projections.md) - Recommended approach ⭐
-- [Consumer](../../../../package/docs/consumer.md) - Background processing
-- [Projection Runner](../../../../package/docs/projection-runner.md) - Testing tool
-
 ### Example Documentation
+
 - [Consumer Usage](./consumer-usage.ts.example) - Production examples
 
 ### External Resources
+
 - [Emmett Documentation](https://event-driven-io.github.io/emmett/)
 - [Event Sourcing Patterns](https://event-driven.io/)
 
@@ -234,4 +229,3 @@ node dist/index.js
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/wataruoguchi/emmett-event-store-kysely/issues)
-- **Package Docs**: [../../../package/docs/](../../../../package/docs/)
