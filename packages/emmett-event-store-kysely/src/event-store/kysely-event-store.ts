@@ -80,7 +80,7 @@ export const defaultKyselyOptions: KyselyEventStoreOptions = {
 };
 
 export const getKyselyEventStore = (deps: Dependencies): KyselyEventStore => {
-  const { db, logger } = deps;
+  const { db, logger, inTransaction = false } = deps;
 
   const eventStore: KyselyEventStore = {
     /**
@@ -93,14 +93,22 @@ export const getKyselyEventStore = (deps: Dependencies): KyselyEventStore => {
     },
 
     /**
-     * @description We do not use session management in this package.
+     * Provide a session-bound event store using a Kysely transaction.
+     * All operations within the callback will share the same DB transaction.
      */
     async withSession<T = unknown>(
       callback: (session: EventStoreSession<KyselyEventStore>) => Promise<T>,
     ): Promise<T> {
-      return await callback({
-        eventStore,
-        close: () => Promise.resolve(),
+      return await db.transaction().execute(async (trx) => {
+        const sessionEventStore = getKyselyEventStore({
+          db: trx as any,
+          logger,
+          inTransaction: true,
+        });
+        return await callback({
+          eventStore: sessionEventStore,
+          close: () => Promise.resolve(),
+        });
       });
     },
 
@@ -113,7 +121,7 @@ export const getKyselyEventStore = (deps: Dependencies): KyselyEventStore => {
       >,
     ): Promise<AggregateStreamResult<State>> {
       const { evolve, initialState, read } = options;
-      logger.info({ streamName, options }, "aggregateStream");
+      logger.debug?.({ streamName, options }, "aggregateStream");
 
       const expectedStreamVersion = read?.expectedStreamVersion;
 
@@ -141,7 +149,7 @@ export const getKyselyEventStore = (deps: Dependencies): KyselyEventStore => {
       options?: ReadStreamOptions<bigint> | ProjectionReadStreamOptions,
     ): Promise<ReadStreamResult<EventType, KyselyReadEventMetadata>> {
       const partition = getPartition(options);
-      logger.info({ streamName, options, partition }, "readStream");
+      logger.debug?.({ streamName, options, partition }, "readStream");
 
       const { currentStreamVersion, streamExists } = await fetchStreamInfo(
         db,
@@ -180,56 +188,63 @@ export const getKyselyEventStore = (deps: Dependencies): KyselyEventStore => {
       const partition = getPartition(options);
       const expected = options?.expectedStreamVersion;
 
-      logger.info({ streamName, events, options, partition }, "appendToStream");
-
+      logger.debug?.(
+        { streamName, events, options, partition },
+        "appendToStream",
+      );
       ensureEventsNotEmpty(events, expected);
 
-      const result = await db
-        .transaction()
-        .execute(async (trx: Dependencies["db"]) => {
-          const { currentStreamVersion, streamExists } = await fetchStreamInfo(
-            trx,
-            streamName,
-            partition,
+      // It may be called within a transaction via withSession.
+      const executeOn = async (executor: Dependencies["db"]) => {
+        const { currentStreamVersion, streamExists } = await fetchStreamInfo(
+          executor,
+          streamName,
+          partition,
+        );
+
+        assertExpectedVersion(expected, currentStreamVersion, streamExists);
+
+        const basePos = currentStreamVersion;
+        const nextStreamPosition = computeNextStreamPosition(
+          basePos,
+          events.length,
+        );
+
+        await upsertStreamRow(
+          executor,
+          streamName,
+          partition,
+          streamType,
+          basePos,
+          nextStreamPosition,
+          expected,
+          streamExists,
+        );
+
+        const messagesToInsert = buildMessagesToInsert<EventType>(
+          events,
+          basePos,
+          streamName,
+          partition,
+        );
+
+        const lastEventGlobalPosition =
+          await insertMessagesAndGetLastGlobalPosition(
+            executor,
+            messagesToInsert,
           );
 
-          assertExpectedVersion(expected, currentStreamVersion, streamExists);
+        return {
+          nextExpectedStreamVersion: nextStreamPosition,
+          lastEventGlobalPosition,
+          createdNewStream: !streamExists,
+        };
+      };
 
-          const basePos = currentStreamVersion;
-          const nextStreamPosition = computeNextStreamPosition(
-            basePos,
-            events.length,
-          );
-
-          await upsertStreamRow(
-            trx,
-            streamName,
-            partition,
-            streamType,
-            basePos,
-            nextStreamPosition,
-            expected,
-            streamExists,
-          );
-
-          const messagesToInsert = buildMessagesToInsert<EventType>(
-            events,
-            basePos,
-            streamName,
-            partition,
-          );
-
-          const lastEventGlobalPosition =
-            await insertMessagesAndGetLastGlobalPosition(trx, messagesToInsert);
-
-          return {
-            nextExpectedStreamVersion: nextStreamPosition,
-            lastEventGlobalPosition,
-            createdNewStream: !streamExists,
-          };
-        });
-
-      return result;
+      if (inTransaction) {
+        return executeOn(db);
+      }
+      return db.transaction().execute(async (trx) => executeOn(trx as any));
     },
 
     close: async () => {
@@ -353,7 +368,6 @@ function buildMessagesToInsert<EventType extends Event>(
     const rawMeta = "metadata" in e ? e.metadata : undefined;
     const eventMeta = rawMeta && typeof rawMeta === "object" ? rawMeta : {};
     const messageMetadata = {
-      messageId,
       ...eventMeta,
     };
     return {
