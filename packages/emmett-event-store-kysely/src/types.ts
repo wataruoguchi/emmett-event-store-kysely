@@ -13,6 +13,8 @@ export type Logger = {
 export type Dependencies<T = any> = {
   db: DatabaseExecutor<T>;
   logger: Logger;
+  /** If true, the provided db is already a transaction executor. */
+  inTransaction?: boolean;
 };
 
 export type ExtendedOptions = {
